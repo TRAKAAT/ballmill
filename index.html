@@ -240,6 +240,10 @@ tr:last-child td{border-bottom:none;}
   </div>
 
   <button class="btn btn-ghost" onclick="showScreen('screen-reports')">📊 Reports & Shift Summary</button>
+  <div style="display:flex;gap:8px;margin-top:4px;">
+    <button class="btn btn-ghost" style="font-size:13px;" onclick="pullFromServer()">⬇ Pull from Server</button>
+    <button class="btn btn-ghost" style="font-size:13px;" onclick="syncToServer()">⬆ Push to Server</button>
+  </div>
 </div>
 </div>
 
@@ -299,6 +303,10 @@ tr:last-child td{border-bottom:none;}
     <div class="home-tile secondary" onclick="showAdminSection('products')">
       <div class="home-tile-icon">🏷️</div>
       <div class="home-tile-label">Products</div>
+    </div>
+    <div class="home-tile secondary" onclick="showServerSettings()">
+      <div class="home-tile-icon">🌐</div>
+      <div class="home-tile-label">Server</div>
     </div>
   </div>
   <div id="admin-section-content"></div>
@@ -1552,6 +1560,115 @@ function showScreen(id){
   if(id==='screen-sales') renderSalesList();
   if(id==='screen-edit'){const d=new Date().toLocaleDateString('en-CA');document.getElementById('edit-date-filter').value=d;loadEditList();}
 }
+
+// ════════════ SERVER SETTINGS ════════════
+function showServerSettings(){
+  const el=document.getElementById('admin-section-content');
+  el.innerHTML='';
+  const hdr=document.createElement('div');hdr.className='sec-hdr';hdr.textContent='🌐 Server Configuration';el.appendChild(hdr);
+  const row=document.createElement('div');row.className='fu-row';
+  const lbl=document.createElement('label');lbl.textContent='Railway Server URL';row.appendChild(lbl);
+  const inp=document.createElement('input');inp.className='fu-input';inp.id='server-url-input';inp.placeholder='https://your-app.up.railway.app';inp.value=getServerUrl();row.appendChild(inp);
+  el.appendChild(row);
+  const saveBtn=document.createElement('button');saveBtn.className='btn btn-gold';saveBtn.textContent='Save & Test Connection';
+  saveBtn.addEventListener('click',async function(){
+    const url=document.getElementById('server-url-input').value.trim().replace(/\/$/,'');
+    if(!url){alert('Please enter a URL');return;}
+    try{
+      const res=await fetch(url+'/health');
+      const data=await res.json();
+      if(data.ok){
+        localStorage.setItem('bm_server_url',url);
+        showSyncStatus('✅ Connected to server!','var(--green)');
+        saveBtn.textContent='✅ Connected — Saved';
+      } else {throw new Error('Bad response');}
+    }catch(e){alert('Could not connect to server. Check the URL.\n\n'+e.message);}
+  });
+  el.appendChild(saveBtn);
+  if(getServerUrl()){
+    const syncBtn=document.createElement('button');syncBtn.className='btn btn-steel';syncBtn.style.background='var(--steel2)';syncBtn.textContent='⬇ Pull All Data from Server Now';
+    syncBtn.addEventListener('click',pullFromServer);el.appendChild(syncBtn);
+    const pushBtn=document.createElement('button');pushBtn.className='btn btn-ghost';pushBtn.textContent='⬆ Push All Local Data to Server';
+    pushBtn.addEventListener('click',syncToServer);el.appendChild(pushBtn);
+  }
+}
+
+// ════════════ SERVER SYNC ════════════
+const SERVER_URL=(localStorage.getItem('bm_server_url')||'').trim();
+
+function getServerUrl(){return (localStorage.getItem('bm_server_url')||'').trim();}
+
+async function syncToServer(){
+  const url=getServerUrl();if(!url)return;
+  const db=getDB();
+  const settings=getSettings();
+  try{
+    await fetch(url+'/sync',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        bags:db.bags,
+        sales:db.sales||[],
+        shifts:db.shifts||[],
+        settings:{
+          operators:settings.operators,
+          clients:settings.clients,
+          feedMaterials:settings.feedMaterials,
+          products:settings.products,
+          chuteMap:settings.chuteMap
+        }
+      })
+    });
+    showSyncStatus('✅ Synced to server','var(--green)');
+  }catch(e){showSyncStatus('⚠ Sync failed: '+e.message,'var(--amber)');}
+}
+
+async function pullFromServer(){
+  const url=getServerUrl();if(!url){alert('Server URL not set. Go to Admin → Settings.');return;}
+  try{
+    showSyncStatus('⟳ Pulling from server...','var(--steel)');
+    const res=await fetch(url+'/pull');
+    if(!res.ok)throw new Error('Server error '+res.status);
+    const data=await res.json();
+    const db=getDB();
+    // Merge bags - server wins for conflicts
+    const bagMap={};
+    db.bags.forEach(function(b){bagMap[b.id]=b;});
+    (data.bags||[]).forEach(function(b){bagMap[b.id]=b;});
+    db.bags=Object.values(bagMap);
+    const saleMap={};
+    (db.sales||[]).forEach(function(s){saleMap[s.id]=s;});
+    (data.sales||[]).forEach(function(s){saleMap[s.id]=s;});
+    db.sales=Object.values(saleMap);
+    const shiftMap={};
+    (db.shifts||[]).forEach(function(s){shiftMap[s.id]=s;});
+    (data.shifts||[]).forEach(function(s){shiftMap[s.id]=s;});
+    db.shifts=Object.values(shiftMap);
+    saveDB(db);
+    // Merge settings
+    if(data.settings&&Object.keys(data.settings).length){
+      const s=getSettings();
+      if(data.settings.operators) s.operators=data.settings.operators;
+      if(data.settings.clients) s.clients=data.settings.clients;
+      if(data.settings.feedMaterials) s.feedMaterials=data.settings.feedMaterials;
+      if(data.settings.products) s.products=data.settings.products;
+      if(data.settings.chuteMap) s.chuteMap=data.settings.chuteMap;
+      saveSettings(s);
+    }
+    showSyncStatus('✅ Pulled '+data.bags.length+' bags from server','var(--green)');
+    updateHomeStats();renderStock();renderSalesList();renderProdBagList();
+  }catch(e){showSyncStatus('⚠ Pull failed: '+e.message,'var(--amber)');}
+}
+
+function showSyncStatus(msg,color){
+  let el=document.getElementById('sync-status-toast');
+  if(!el){el=document.createElement('div');el.id='sync-status-toast';el.style.cssText='position:fixed;top:70px;left:50%;transform:translateX(-50%);padding:8px 18px;border-radius:20px;font-size:13px;font-weight:700;color:#fff;z-index:999;transition:opacity .3s;';document.body.appendChild(el);}
+  el.style.background=color;el.textContent=msg;el.style.opacity='1';
+  clearTimeout(el._t);el._t=setTimeout(function(){el.style.opacity='0';},3000);
+}
+
+// Auto-sync every 5 minutes if server configured
+setInterval(function(){if(getServerUrl())syncToServer();},300000);
 
 // ════════════ INIT ════════════
 function init(){

@@ -183,6 +183,7 @@ tr:last-child td{border-bottom:none;}
   </div>
   <div id="topbar-right">
     <div id="clock">--:--</div>
+    <div id="online-dot" style="width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0;" title="Server status"></div>
     <div id="shift-badge">Day Shift</div>
   </div>
 </div>
@@ -731,6 +732,8 @@ function submitBag(qc){
   closeOverlay('overlay-submit-bag');
   updateHomeStats();
   renderProdBagList();
+  // Auto-sync to server
+  if(getServerUrl()) syncToServer();
   // Feedback
   const msg=document.createElement('div');
   msg.style.cssText='position:fixed;top:80px;left:50%;transform:translateX(-50%);background:'+(qc==='pass'?'var(--green)':'var(--amber)')+';color:#fff;padding:10px 20px;border-radius:20px;font-weight:700;font-size:14px;z-index:999;';
@@ -992,6 +995,7 @@ function submitSale(){
   closeOverlay('overlay-register-sale');
   renderSalesList();
   renderStock();
+  if(getServerUrl()) syncToServer();
   generateDeliveryNote(sale);
 }
 
@@ -1221,6 +1225,7 @@ function openChuteMappingForm(feedId,feedName,defaultChute){
     saveSettings(settings);
     closeOverlay('overlay-admin-form');
     showAdminSection('feedmaterials');
+    if(getServerUrl()) syncToServer();
   });
   body.appendChild(saveBtn);
   openOverlay('overlay-admin-form');
@@ -1297,6 +1302,7 @@ function saveAdminItem(section){
   saveSettings(settings);
   closeOverlay('overlay-admin-form');
   showAdminSection(section);
+  if(getServerUrl()) syncToServer();
 }
 
 function deleteAdminItem(type,id){
@@ -1671,10 +1677,30 @@ function showSyncStatus(msg,color){
 setInterval(function(){if(getServerUrl())syncToServer();},300000);
 
 // ════════════ INIT ════════════
-function init(){
+function updateOnlineIndicator(){
+  const dot=document.getElementById('online-dot');
+  if(!dot) return;
+  const url=getServerUrl();
+  if(!url){dot.style.background='var(--muted)';dot.title='No server configured';}
+  else if(navigator.onLine){dot.style.background='var(--green)';dot.title='Online';}
+  else{dot.style.background='var(--red)';dot.title='Offline';}
+}
+window.addEventListener('online', updateOnlineIndicator);
+window.addEventListener('offline', updateOnlineIndicator);
+
+async function init(){
   document.getElementById('report-date-pick').value=new Date().toLocaleDateString('en-CA');
   updateShiftBar();
   updateHomeStats();
+  updateOnlineIndicator();
+  // Auto-pull from server on load if configured
+  const url=getServerUrl();
+  if(url&&navigator.onLine){
+    try{
+      showSyncStatus('⟳ Syncing with server...','var(--steel2)');
+      await pullFromServer();
+    }catch(e){console.log('Auto-pull failed:',e);}
+  }
 }
 init();
 </script>

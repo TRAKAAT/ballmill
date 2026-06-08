@@ -1596,6 +1596,105 @@ function showServerSettings(){
     syncBtn.addEventListener('click',pullFromServer);el.appendChild(syncBtn);
     const pushBtn=document.createElement('button');pushBtn.className='btn btn-ghost';pushBtn.textContent='⬆ Push All Local Data to Server';
     pushBtn.addEventListener('click',syncToServer);el.appendChild(pushBtn);
+
+    const divider=document.createElement('div');divider.className='divider';el.appendChild(divider);
+    const dangerHdr=document.createElement('div');dangerHdr.className='sec-hdr';dangerHdr.style.color='var(--red)';dangerHdr.textContent='⚠ Data Reset';el.appendChild(dangerHdr);
+    const noteEl=document.createElement('div');noteEl.style.cssText='font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5;';
+    noteEl.textContent='Wipes ALL bags, sales & shifts from the server and local storage, then seeds the opening stock totals (NF Carbon Black, up to 17 May 2026) as a single historical record per chute.';
+    el.appendChild(noteEl);
+    const wipeBtn=document.createElement('button');wipeBtn.className='btn btn-red';wipeBtn.textContent='🗑 Wipe Server & Seed Opening Stock';
+    wipeBtn.addEventListener('click',wipeAndSeedOpeningStock);el.appendChild(wipeBtn);
+  }
+}
+
+// ════════════ WIPE & SEED OPENING STOCK ════════════
+async function wipeAndSeedOpeningStock(){
+  if(!confirm('⚠️ WARNING\n\nThis will permanently delete ALL bags, sales and shifts from the server and your local storage.\n\nIt will then upload the NF Carbon Black opening stock totals (pre-18 May 2026).\n\nAre you sure?')) return;
+  const url=getServerUrl();
+  if(!url){alert('Server URL not set.');return;}
+
+  // Opening stock data from Updated_old_nf.xlsx — totals per chute up to 17 May 2026
+  // DUST: Chute1, Chute2, BH1, BH2 | FINES: Chute3, Chute4 | NF MIX: Chute5 | METAL SS MIX: Chute6
+  const OPENING_DATE='2026-05-17';
+  const OPENING_TIMESTAMP='2026-05-17T23:59:00.000Z';
+  const FEED_NAME='NF Carbon Black';
+  const openingChutes=[
+    {chute:'1', productName:'NF Carbon Black Dust', weight:41065.5},
+    {chute:'2', productName:'NF Carbon Black Dust', weight:115087.5},
+    {chute:'BH1', productName:'NF Carbon Black Dust', weight:22075},
+    {chute:'BH2', productName:'NF Carbon Black Dust', weight:17587},
+    {chute:'3', productName:'NF Carbon Black Fines', weight:168784.5},
+    {chute:'4', productName:'NF Carbon Black Fines', weight:3525},
+    {chute:'5', productName:'NF Carbon Black NF Mix', weight:50118.5},
+    {chute:'6', productName:'NF Carbon Black Metal SS Mix', weight:38104},
+  ];
+
+  showSyncStatus('⟳ Wiping server data...','var(--red)');
+
+  try{
+    // 1. Wipe server — delete all bags, sales, shifts by sending empty arrays and using /sync with a special wipe endpoint
+    // We'll use individual DELETE calls or overwrite by fetching IDs first then deleting
+    // Strategy: Pull all, then delete each bag/sale/shift by ID
+    const pullRes=await fetch(url+'/pull');
+    if(!pullRes.ok) throw new Error('Could not fetch current data');
+    const current=await pullRes.json();
+
+    // Delete all bags
+    for(const b of (current.bags||[])){
+      await fetch(url+'/bags/'+b.id,{method:'DELETE'});
+    }
+    // Delete all sales
+    for(const s of (current.sales||[])){
+      await fetch(url+'/sales/'+s.id,{method:'DELETE'}).catch(()=>{});
+    }
+    // Delete all shifts
+    for(const s of (current.shifts||[])){
+      await fetch(url+'/shifts/'+s.id,{method:'DELETE'}).catch(()=>{});
+    }
+
+    showSyncStatus('⟳ Uploading opening stock...','var(--steel)');
+
+    // 2. Build opening stock bag objects
+    const seedBags=openingChutes.map(function(c){
+      return {
+        id:'seed_'+c.chute+'_'+Date.now().toString(36),
+        timestamp:OPENING_TIMESTAMP,
+        date:OPENING_DATE,
+        time:'23:59',
+        feedId:'seed_nf_cb',
+        feedName:FEED_NAME,
+        chute:c.chute,
+        productId:'seed_prod_'+c.chute,
+        productName:c.productName,
+        operator:'Opening Stock',
+        weight:c.weight,
+        tagNum:'OPENING',
+        qc:'pass',
+        shift:'day',
+        shiftId:null,
+        isOpeningStock:true
+      };
+    });
+
+    // 3. Push seed bags to server
+    const syncRes=await fetch(url+'/sync',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({bags:seedBags,sales:[],shifts:[]})
+    });
+    if(!syncRes.ok) throw new Error('Failed to seed opening stock');
+
+    // 4. Wipe local storage and replace with seed bags
+    const freshDb={bags:seedBags,sales:[],shifts:[]};
+    saveDB(freshDb);
+
+    showSyncStatus('✅ Wipe & seed complete!','var(--green)');
+    alert('✅ Done!\n\nServer wiped and opening stock seeded:\n'
+      +openingChutes.map(function(c){return 'Chute '+c.chute+': '+c.weight.toLocaleString()+' kg';}).join('\n'));
+    updateHomeStats();renderStock();renderSalesList();renderProdBagList();
+  }catch(e){
+    showSyncStatus('⚠ Wipe failed: '+e.message,'var(--amber)');
+    alert('Error: '+e.message);
   }
 }
 

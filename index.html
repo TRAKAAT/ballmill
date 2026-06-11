@@ -798,7 +798,7 @@ function renderStock(){
     filterEl.appendChild(chip);
   });
   const chutes=['1','2','3','4','5','6','BH1','BH2'];
-  const bags=db.bags.filter(function(b){return b.feedId===activeFeed&&b.qc==='pass';});
+  const bags=db.bags.filter(function(b){return (b.feedId===activeFeed||b.isSeeded||b.isOpeningStock)&&b.qc==='pass';});
   // Deduct sold bags
   const soldBagIds=new Set();
   (db.sales||[]).forEach(function(s){(s.bagIds||[]).forEach(function(id){soldBagIds.add(id);});});
@@ -1609,91 +1609,318 @@ function showServerSettings(){
 
 // ════════════ WIPE & SEED OPENING STOCK ════════════
 async function wipeAndSeedOpeningStock(){
-  if(!confirm('⚠️ WARNING\n\nThis will permanently delete ALL bags, sales and shifts from the server and your local storage.\n\nIt will then upload the NF Carbon Black opening stock totals (pre-18 May 2026).\n\nAre you sure?')) return;
+  if(!confirm('⚠️ WARNING\n\nThis will permanently delete ALL bags, sales and shifts from the server and your local storage.\n\nIt will then upload the NF Carbon Black opening stock (pre-18 May 2026) plus all scanned bag data (18 May – 05 Jun 2026).\n\nAre you sure?')) return;
   const url=getServerUrl();
   if(!url){alert('Server URL not set.');return;}
 
-  // Opening stock data from Updated_old_nf.xlsx — totals per chute up to 17 May 2026
-  // DUST: Chute1, Chute2, BH1, BH2 | FINES: Chute3, Chute4 | NF MIX: Chute5 | METAL SS MIX: Chute6
-  const OPENING_DATE='2026-05-17';
-  const OPENING_TIMESTAMP='2026-05-17T23:59:00.000Z';
-  const FEED_NAME='NF Carbon Black';
-  const openingChutes=[
-    {chute:'1', productName:'NF Carbon Black Dust', weight:41065.5},
-    {chute:'2', productName:'NF Carbon Black Dust', weight:115087.5},
-    {chute:'BH1', productName:'NF Carbon Black Dust', weight:22075},
-    {chute:'BH2', productName:'NF Carbon Black Dust', weight:17587},
-    {chute:'3', productName:'NF Carbon Black Fines', weight:168784.5},
-    {chute:'4', productName:'NF Carbon Black Fines', weight:3525},
-    {chute:'5', productName:'NF Carbon Black NF Mix', weight:50118.5},
-    {chute:'6', productName:'NF Carbon Black Metal SS Mix', weight:38104},
-  ];
+  // ── Resolve feedId from registered feed materials ──
+  const settings=getSettings();
+  const fms=settings.feedMaterials||[];
+  const nfFeed=fms.find(function(f){return f.name&&f.name.toLowerCase().includes('nf carbon');})
+             ||fms.find(function(f){return f.name&&f.name.toLowerCase().includes('carbon');})
+             ||fms[0];
+  const FEED_ID=nfFeed?nfFeed.id:'seed_nf_cb';
+  const FEED_NAME=nfFeed?nfFeed.name:'NF Carbon Black';
+
+  // ── Chute → product name mapping (from chuteMap if available) ──
+  const chuteMap=settings.chuteMap||{};
+  function getProdName(chute,fallback){
+    const key=FEED_ID+'_'+chute;
+    return (chuteMap[key]&&chuteMap[key].productName)||fallback;
+  }
+  function getProdId(chute){
+    const key=FEED_ID+'_'+chute;
+    return (chuteMap[key]&&chuteMap[key].productId)||('seed_prod_'+chute);
+  }
+
+  // ── Helper to build a bag record ──
+  var _seedIdx=0;
+  function mkBag(date,shift,chute,weight,operator,note){
+    _seedIdx++;
+    const ts=date+'T'+(shift==='night'?'20':'08')+':00:00.000Z';
+    return {
+      id:'seed_'+date.replace(/-/g,'')+'_c'+chute+'_'+_seedIdx,
+      timestamp:ts,
+      date:date,
+      time:shift==='night'?'20:00':'08:00',
+      feedId:FEED_ID,
+      feedName:FEED_NAME,
+      chute:chute,
+      productId:getProdId(chute),
+      productName:getProdName(chute,note||'NF Carbon Black'),
+      operator:operator||'Seeded',
+      weight:weight,
+      tagNum:'SCAN',
+      qc:'pass',
+      shift:shift,
+      shiftId:null,
+      isSeeded:true
+    };
+  }
 
   showSyncStatus('⟳ Wiping server data...','var(--red)');
 
   try{
-    // 1. Wipe server — delete all bags, sales, shifts by sending empty arrays and using /sync with a special wipe endpoint
-    // We'll use individual DELETE calls or overwrite by fetching IDs first then deleting
-    // Strategy: Pull all, then delete each bag/sale/shift by ID
+    // 1. Wipe server
     const pullRes=await fetch(url+'/pull');
     if(!pullRes.ok) throw new Error('Could not fetch current data');
     const current=await pullRes.json();
+    for(const b of (current.bags||[])) await fetch(url+'/bags/'+b.id,{method:'DELETE'});
+    for(const s of (current.sales||[])) await fetch(url+'/sales/'+s.id,{method:'DELETE'}).catch(()=>{});
+    for(const s of (current.shifts||[])) await fetch(url+'/shifts/'+s.id,{method:'DELETE'}).catch(()=>{});
 
-    // Delete all bags
-    for(const b of (current.bags||[])){
-      await fetch(url+'/bags/'+b.id,{method:'DELETE'});
-    }
-    // Delete all sales
-    for(const s of (current.sales||[])){
-      await fetch(url+'/sales/'+s.id,{method:'DELETE'}).catch(()=>{});
-    }
-    // Delete all shifts
-    for(const s of (current.shifts||[])){
-      await fetch(url+'/shifts/'+s.id,{method:'DELETE'}).catch(()=>{});
-    }
+    showSyncStatus('⟳ Building seed data...','var(--steel)');
 
-    showSyncStatus('⟳ Uploading opening stock...','var(--steel)');
+    const allBags=[];
 
-    // 2. Build opening stock bag objects
-    const seedBags=openingChutes.map(function(c){
-      return {
-        id:'seed_'+c.chute+'_'+Date.now().toString(36),
-        timestamp:OPENING_TIMESTAMP,
-        date:OPENING_DATE,
-        time:'23:59',
-        feedId:'seed_nf_cb',
-        feedName:FEED_NAME,
-        chute:c.chute,
-        productId:'seed_prod_'+c.chute,
-        productName:c.productName,
-        operator:'Opening Stock',
-        weight:c.weight,
-        tagNum:'OPENING',
-        qc:'pass',
-        shift:'day',
-        shiftId:null,
-        isOpeningStock:true
-      };
+    // ══════════════════════════════════════════════════
+    // OPENING STOCK — pre-18 May 2026 (from spreadsheet)
+    // ══════════════════════════════════════════════════
+    const OD='2026-05-17';
+    [
+      {c:'1',  w:41065.5, p:'NF Carbon Black Dust'},
+      {c:'2',  w:115087.5,p:'NF Carbon Black Dust'},
+      {c:'BH1',w:22075,   p:'NF Carbon Black Dust'},
+      {c:'BH2',w:17587,   p:'NF Carbon Black Dust'},
+      {c:'3',  w:168784.5,p:'NF Carbon Black Fines'},
+      {c:'4',  w:3525,    p:'NF Carbon Black Fines'},
+      {c:'5',  w:50118.5, p:'NF Carbon Black NF Mix'},
+      {c:'6',  w:38104,   p:'NF Carbon Black Metal SS Mix'},
+    ].forEach(function(r){
+      _seedIdx++;
+      allBags.push({
+        id:'opening_c'+r.c+'_'+_seedIdx,
+        timestamp:OD+'T23:59:00.000Z',
+        date:OD,time:'23:59',
+        feedId:FEED_ID,feedName:FEED_NAME,
+        chute:r.c,productId:getProdId(r.c),
+        productName:getProdName(r.c,r.p),
+        operator:'Opening Stock',weight:r.w,
+        tagNum:'OPENING',qc:'pass',shift:'day',shiftId:null,isSeeded:true
+      });
     });
 
-    // 3. Push seed bags to server
+    // ══════════════════════════════════════════════════
+    // SCANNED DATA — 18 May to 05 Jun 2026
+    // Each entry: mkBag(date, shift, chute, weight, operator)
+    // ══════════════════════════════════════════════════
+
+    // ── 18 May 2026 — Day (Page 24) ──
+    // Operators: Lhine / Brendon
+    [789,1111,770].forEach(function(w){allBags.push(mkBag('2026-05-18','day','2',w,'Lhine'));});
+    [456,372,446].forEach(function(w){allBags.push(mkBag('2026-05-18','day','BH1',w,'Lhine'));});
+    allBags.push(mkBag('2026-05-18','day','BH2',467,'Lhine'));
+    allBags.push(mkBag('2026-05-18','day','3',1131,'Lhine'));
+    [763,1043].forEach(function(w){allBags.push(mkBag('2026-05-18','day','5',w,'Lhine'));});
+    allBags.push(mkBag('2026-05-18','day','6',863,'Lhine'));
+
+    // ── 19 May 2026 — Day (Page 23) ──
+    // Operators: Lhine / Brecon
+    allBags.push(mkBag('2026-05-19','day','1',938,'Lhine'));
+    [1144,750,643].forEach(function(w){allBags.push(mkBag('2026-05-19','day','2',w,'Lhine'));});
+    allBags.push(mkBag('2026-05-19','day','BH1',471,'Lhine'));
+    allBags.push(mkBag('2026-05-19','day','BH2',577,'Lhine'));
+    [1403,1083,1273].forEach(function(w){allBags.push(mkBag('2026-05-19','day','3',w,'Lhine'));});
+    allBags.push(mkBag('2026-05-19','day','4',576,'Lhine'));
+    allBags.push(mkBag('2026-05-19','day','5',838,'Lhine'));
+    [629,653].forEach(function(w){allBags.push(mkBag('2026-05-19','day','6',w,'Lhine'));});
+
+    // ── 19 May 2026 — Night (Page 22) ──
+    // Operators: Kganu / Luckman
+    allBags.push(mkBag('2026-05-19','night','2',502,'Kganu'));
+    allBags.push(mkBag('2026-05-19','night','BH1',360,'Kganu'));
+    allBags.push(mkBag('2026-05-19','night','BH2',381,'Kganu'));
+    [880,675].forEach(function(w){allBags.push(mkBag('2026-05-19','night','3',w,'Kganu'));});
+
+    // ── 20 May 2026 — Day (Page 21) ──
+    // Operator: Luckman / Kleiman
+    allBags.push(mkBag('2026-05-20','day','1',630,'Luckman'));
+    [732,798,769].forEach(function(w){allBags.push(mkBag('2026-05-20','day','2',w,'Luckman'));});
+    allBags.push(mkBag('2026-05-20','day','BH1',327,'Luckman'));
+    [691,661].forEach(function(w){allBags.push(mkBag('2026-05-20','day','3',w,'Luckman'));});
+    [744,687].forEach(function(w){allBags.push(mkBag('2026-05-20','day','5',w,'Luckman'));});
+    [443,571].forEach(function(w){allBags.push(mkBag('2026-05-20','day','6',w,'Luckman'));});
+
+    // ── 20 May 2026 — Night (Page 19) ──
+    // Operator: Brendon
+    [786,1070].forEach(function(w){allBags.push(mkBag('2026-05-20','night','2',w,'Brendon'));});
+    [870,920,731].forEach(function(w){allBags.push(mkBag('2026-05-20','night','3',w,'Brendon'));});
+    allBags.push(mkBag('2026-05-20','night','5',1203,'Brendon'));
+    allBags.push(mkBag('2026-05-20','night','6',897,'Brendon'));
+
+    // ── 21 May 2026 — Day (Page 20) ──
+    // Operator: Phillip & Eric
+    allBags.push(mkBag('2026-05-21','day','2',951,'Phillip'));
+
+    // ── 22 May 2026 — Day (Page 17) ──
+    // Operator: Phillip & Eric
+    [772,750,731,787].forEach(function(w){allBags.push(mkBag('2026-05-22','day','2',w,'Phillip'));});
+    [479,514].forEach(function(w){allBags.push(mkBag('2026-05-22','day','BH1',w,'Phillip'));});
+    allBags.push(mkBag('2026-05-22','day','3',1003,'Phillip'));
+    allBags.push(mkBag('2026-05-22','day','5',850,'Phillip'));
+    allBags.push(mkBag('2026-05-22','day','6',860,'Phillip'));
+
+    // ── 22 May 2026 — Night (Page 18) — Product: Albross / Groan Creek ──
+    // Operator: Lhine / Garwin / Brendon
+    [655,785,1024,1097].forEach(function(w){allBags.push(mkBag('2026-05-22','night','1',w,'Lhine'));});
+    [940,1043,731,880].forEach(function(w){allBags.push(mkBag('2026-05-22','night','2',w,'Lhine'));});
+    [589,979].forEach(function(w){allBags.push(mkBag('2026-05-22','night','3',w,'Lhine'));});
+    allBags.push(mkBag('2026-05-22','night','BH1',371,'Lhine'));
+    allBags.push(mkBag('2026-05-22','night','4',568,'Lhine'));
+    [697,928,975].forEach(function(w){allBags.push(mkBag('2026-05-22','night','5',w,'Lhine'));});
+
+    // ── 23 May 2026 — Day (Page 16) ──
+    // Operator: Phillip & Eric
+    [460,966,931].forEach(function(w){allBags.push(mkBag('2026-05-23','day','1',w,'Phillip'));});
+    [713,847,860,535].forEach(function(w){allBags.push(mkBag('2026-05-23','day','2',w,'Phillip'));});
+    [389,514].forEach(function(w){allBags.push(mkBag('2026-05-23','day','BH1',w,'Phillip'));});
+    [701,1009].forEach(function(w){allBags.push(mkBag('2026-05-23','day','3',w,'Phillip'));});
+    [881,950].forEach(function(w){allBags.push(mkBag('2026-05-23','day','5',w,'Phillip'));});
+    [460,960].forEach(function(w){allBags.push(mkBag('2026-05-23','day','6',w,'Phillip'));});
+
+    // ── 23 May 2026 — Night (Page 15) ──
+    // Operator: Lhine / Brecon
+    [792,770,784,586].forEach(function(w){allBags.push(mkBag('2026-05-23','night','1',w,'Lhine'));});
+    [1020,1181,632,1063].forEach(function(w){allBags.push(mkBag('2026-05-23','night','2',w,'Lhine'));});
+    allBags.push(mkBag('2026-05-23','night','BH1',404,'Lhine'));
+    allBags.push(mkBag('2026-05-23','night','BH2',449,'Lhine'));
+    allBags.push(mkBag('2026-05-23','night','3',782,'Lhine'));
+    [1008,960].forEach(function(w){allBags.push(mkBag('2026-05-23','night','5',w,'Lhine'));});
+    [810,526].forEach(function(w){allBags.push(mkBag('2026-05-23','night','6',w,'Lhine'));});
+
+    // ── 24 May 2026 — Day (Page 13) ──
+    // Operator: Phillip & Eric
+    [740,902].forEach(function(w){allBags.push(mkBag('2026-05-24','day','1',w,'Phillip'));});
+    [1121,803,1214,353,1036].forEach(function(w){allBags.push(mkBag('2026-05-24','day','2',w,'Phillip'));});
+    [923,385].forEach(function(w){allBags.push(mkBag('2026-05-24','day','3',w,'Phillip'));});
+    [910,1036,1024].forEach(function(w){allBags.push(mkBag('2026-05-24','day','5',w,'Phillip'));});
+    [871,808].forEach(function(w){allBags.push(mkBag('2026-05-24','day','6',w,'Phillip'));});
+
+    // ── 24 May 2026 — Night (Page 14) ──
+    // Operator: Kiernan / Luckman
+    [1032,775,663,714,605].forEach(function(w){allBags.push(mkBag('2026-05-24','night','1',w,'Kiernan'));});
+    [895,860,980].forEach(function(w){allBags.push(mkBag('2026-05-24','night','2',w,'Kiernan'));});
+    allBags.push(mkBag('2026-05-24','night','BH1',447,'Kiernan'));
+    allBags.push(mkBag('2026-05-24','night','BH2',434,'Kiernan'));
+    allBags.push(mkBag('2026-05-24','night','4',377,'Kiernan'));
+    [861,846].forEach(function(w){allBags.push(mkBag('2026-05-24','night','5',w,'Kiernan'));});
+    allBags.push(mkBag('2026-05-24','night','6',754,'Kiernan'));
+
+    // ── 25 May 2026 — Day (Page 12) ──
+    // Operator: Phillip & Eric
+    [1090,809].forEach(function(w){allBags.push(mkBag('2026-05-25','day','1',w,'Phillip'));});
+    [1167,864,1280,1254,1115].forEach(function(w){allBags.push(mkBag('2026-05-25','day','2',w,'Phillip'));});
+    allBags.push(mkBag('2026-05-25','day','BH2',531,'Phillip'));
+    [625,1085].forEach(function(w){allBags.push(mkBag('2026-05-25','day','3',w,'Phillip'));});
+    [1435,810].forEach(function(w){allBags.push(mkBag('2026-05-25','day','5',w,'Phillip'));});
+    [868,1185].forEach(function(w){allBags.push(mkBag('2026-05-25','day','6',w,'Phillip'));});
+
+    // ── 25 May 2026 — Night (Page 11) ──
+    // Operator: LuckyMan / Mercel / Labis
+    [955,971,1250].forEach(function(w){allBags.push(mkBag('2026-05-25','night','1',w,'Luckman'));});
+    [1500,1350,1150].forEach(function(w){allBags.push(mkBag('2026-05-25','night','2',w,'Luckman'));});
+    allBags.push(mkBag('2026-05-25','night','BH1',1696,'Luckman'));
+    allBags.push(mkBag('2026-05-25','night','3',960,'Luckman'));
+    [674,950].forEach(function(w){allBags.push(mkBag('2026-05-25','night','5',w,'Luckman'));});
+    [856,900].forEach(function(w){allBags.push(mkBag('2026-05-25','night','6',w,'Luckman'));});
+
+    // ── 26 May 2026 — Day (Page 10) ──
+    // Operator: Luckman
+    [1035,994].forEach(function(w){allBags.push(mkBag('2026-05-26','day','1',w,'Luckman'));});
+    [4355,2540].forEach(function(w){allBags.push(mkBag('2026-05-26','day','2',w,'Luckman'));});
+    [853,1123,1239].forEach(function(w){allBags.push(mkBag('2026-05-26','day','3',w,'Luckman'));});
+    allBags.push(mkBag('2026-05-26','day','4',353,'Luckman'));
+    allBags.push(mkBag('2026-05-26','day','5',1312,'Luckman'));
+    allBags.push(mkBag('2026-05-26','day','6',1055,'Luckman'));
+
+    // ── 26 May 2026 — Night (Page 9) ──
+    // Operator: Phillip
+    [1387,1198,1185].forEach(function(w){allBags.push(mkBag('2026-05-26','night','1',w,'Phillip'));});
+    [1032,1057,974,1100,1036,952].forEach(function(w){allBags.push(mkBag('2026-05-26','night','2',w,'Phillip'));});
+    allBags.push(mkBag('2026-05-26','night','3',1326,'Phillip'));
+    [1081,988].forEach(function(w){allBags.push(mkBag('2026-05-26','night','5',w,'Phillip'));});
+    allBags.push(mkBag('2026-05-26','night','6',1031,'Phillip'));
+
+    // ── 27 May 2026 — Day (Page 8) ──
+    // Operator: Lhine / Zuma
+    [829,897].forEach(function(w){allBags.push(mkBag('2026-05-27','day','1',w,'Lhine'));});
+    [939,994].forEach(function(w){allBags.push(mkBag('2026-05-27','day','2',w,'Lhine'));});
+    [465,449].forEach(function(w){allBags.push(mkBag('2026-05-27','day','BH1',w,'Lhine'));});
+    [905,920].forEach(function(w){allBags.push(mkBag('2026-05-27','day','3',w,'Lhine'));});
+    [1277,199].forEach(function(w){allBags.push(mkBag('2026-05-27','day','5',w,'Lhine'));});
+    [454,191].forEach(function(w){allBags.push(mkBag('2026-05-27','day','6',w,'Lhine'));});
+
+    // ── 27 May 2026 — Night (Page 7) ──
+    // Operator: Kleiman (Trainees: Depie, Soka)
+    [1287,680,963].forEach(function(w){allBags.push(mkBag('2026-05-27','night','1',w,'Kleiman'));});
+    [972,600,1320].forEach(function(w){allBags.push(mkBag('2026-05-27','night','2',w,'Kleiman'));});
+    allBags.push(mkBag('2026-05-27','night','BH1',382,'Kleiman'));
+    allBags.push(mkBag('2026-05-27','night','3',893,'Kleiman'));
+    allBags.push(mkBag('2026-05-27','night','5',902,'Kleiman'));
+    allBags.push(mkBag('2026-05-27','night','6',747,'Kleiman'));
+
+    // ── 28 May 2026 — Day (Page 6) ──
+    // Operator: Lhine / Moemhe / Garwin
+    [609,1025].forEach(function(w){allBags.push(mkBag('2026-05-28','day','1',w,'Lhine'));});
+    [1070,1071].forEach(function(w){allBags.push(mkBag('2026-05-28','day','2',w,'Lhine'));});
+    allBags.push(mkBag('2026-05-28','day','BH2',486,'Lhine'));
+    allBags.push(mkBag('2026-05-28','day','5',546,'Lhine'));
+    allBags.push(mkBag('2026-05-28','day','6',547,'Lhine'));
+
+    // ── 28 May 2026 — Night (Page 5) ──
+    // Operator: Kganu / Luckman (Trainees: Eddie, Soka)
+    allBags.push(mkBag('2026-05-28','night','2',960,'Kganu'));
+    allBags.push(mkBag('2026-05-28','night','3',728,'Kganu'));
+    allBags.push(mkBag('2026-05-28','night','4',379,'Kganu'));
+
+    // ── 29 May 2026 — Day (Page 4) ──
+    // Operator: Lhine / Klewyn
+    allBags.push(mkBag('2026-05-29','day','1',936,'Lhine'));
+    allBags.push(mkBag('2026-05-29','day','2',866,'Lhine'));
+    allBags.push(mkBag('2026-05-29','day','3',959,'Lhine'));
+    allBags.push(mkBag('2026-05-29','day','5',589,'Lhine'));
+    allBags.push(mkBag('2026-05-29','day','6',652,'Lhine'));
+
+    // ── 29 May 2026 — Night (Page 3) ──
+    // Operator: Coddie / Luckman / Sora
+    allBags.push(mkBag('2026-05-29','night','2',810,'Coddie'));
+    allBags.push(mkBag('2026-05-29','night','BH1',397,'Coddie'));
+    allBags.push(mkBag('2026-05-29','night','3',825,'Coddie'));
+
+    // ── 05 Jun 2026 — Day (Page 2) ──
+    // Operator: Phillip & Eric
+    [1040,1020].forEach(function(w){allBags.push(mkBag('2026-06-05','day','1',w,'Phillip'));});
+    [1192,1765].forEach(function(w){allBags.push(mkBag('2026-06-05','day','2',w,'Phillip'));});
+    allBags.push(mkBag('2026-06-05','day','3',1367,'Phillip'));
+    allBags.push(mkBag('2026-06-05','day','5',1220,'Phillip'));
+    allBags.push(mkBag('2026-06-05','day','6',1091,'Phillip'));
+
+    // ── 04 Jun 2026 — Day (Page 1) ──
+    // Operator: Phillip
+    allBags.push(mkBag('2026-06-04','day','1',119,'Phillip'));
+    [1282,1046].forEach(function(w){allBags.push(mkBag('2026-06-04','day','2',w,'Phillip'));});
+    allBags.push(mkBag('2026-06-04','day','BH1',646,'Phillip'));
+    allBags.push(mkBag('2026-06-04','day','BH2',549,'Phillip'));
+    allBags.push(mkBag('2026-06-04','day','5',25,'Phillip'));
+    allBags.push(mkBag('2026-06-04','day','6',935,'Phillip'));
+
+    // 3. Push all bags to server
+    showSyncStatus('⟳ Uploading '+allBags.length+' records...','var(--steel)');
     const syncRes=await fetch(url+'/sync',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({bags:seedBags,sales:[],shifts:[]})
+      body:JSON.stringify({bags:allBags,sales:[],shifts:[]})
     });
-    if(!syncRes.ok) throw new Error('Failed to seed opening stock');
+    if(!syncRes.ok) throw new Error('Failed to upload seed data');
 
-    // 4. Wipe local storage and replace with seed bags
-    const freshDb={bags:seedBags,sales:[],shifts:[]};
-    saveDB(freshDb);
+    // 4. Save locally
+    saveDB({bags:allBags,sales:[],shifts:[]});
 
-    showSyncStatus('✅ Wipe & seed complete!','var(--green)');
-    alert('✅ Done!\n\nServer wiped and opening stock seeded:\n'
-      +openingChutes.map(function(c){return 'Chute '+c.chute+': '+c.weight.toLocaleString()+' kg';}).join('\n'));
+    showSyncStatus('✅ Done! '+allBags.length+' records seeded','var(--green)');
+    alert('✅ Wipe & seed complete!\n\n'+allBags.length+' bag records uploaded\n(Opening stock + scanned data 18 May – 05 Jun 2026)');
     updateHomeStats();renderStock();renderSalesList();renderProdBagList();
   }catch(e){
-    showSyncStatus('⚠ Wipe failed: '+e.message,'var(--amber)');
+    showSyncStatus('⚠ Failed: '+e.message,'var(--amber)');
     alert('Error: '+e.message);
   }
 }

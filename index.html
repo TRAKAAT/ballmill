@@ -268,8 +268,20 @@ tr:last-child td{border-bottom:none;}
   <div class="screen-title">📦 Stock</div>
   <div class="screen-sub">Current inventory by chute & product</div>
   <div id="stock-feed-filter" class="chip-row"></div>
+  <button class="btn btn-ghost" style="margin-bottom:10px;" id="stock-report-btn">📤 Share Stock Report</button>
   <div id="stock-content"><div class="empty">No stock data yet</div></div>
 </div>
+</div>
+
+<!-- STOCK REPORT OVERLAY -->
+<div class="overlay" id="overlay-stock-report">
+  <div class="modal-sheet" style="max-height:95dvh;">
+    <div class="modal-header">
+      <div class="modal-title">📊 Stock Report</div>
+      <button class="modal-close" id="close-stock-report">✕</button>
+    </div>
+    <div id="stock-report-body"></div>
+  </div>
 </div>
 
 <!-- SALES -->
@@ -387,61 +399,6 @@ tr:last-child td{border-bottom:none;}
 </div>
 </div>
 
-
-<!-- STATISTICS -->
-<div class="screen" id="screen-stats">
-<div class="screen-content">
-  <div class="screen-title">📈 Statistics</div>
-  <div class="screen-sub">Production analytics & operator performance</div>
-
-  <!-- Date range presets -->
-  <div class="chip-row" id="stats-preset-chips">
-    <div class="chip active" data-preset="today">Today</div>
-    <div class="chip" data-preset="week">This Week</div>
-    <div class="chip" data-preset="month">This Month</div>
-    <div class="chip" data-preset="custom">Custom</div>
-  </div>
-  <div id="stats-custom-range" style="display:none;gap:8px;margin-bottom:12px;display:none;">
-    <div style="display:flex;gap:8px;">
-      <div class="fu-row" style="flex:1;margin:0;"><label>From</label><input type="date" class="fu-input" id="stats-from"></div>
-      <div class="fu-row" style="flex:1;margin:0;"><label>To</label><input type="date" class="fu-input" id="stats-to"></div>
-    </div>
-    <button class="btn btn-gold" style="margin-top:8px;" id="stats-apply-btn">Apply</button>
-  </div>
-
-  <!-- Feed material filter -->
-  <div class="chip-row" id="stats-feed-chips"></div>
-
-  <!-- KPI tiles -->
-  <div class="stock-grid" id="stats-kpi-grid" style="grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;"></div>
-
-  <!-- Product mix donut -->
-  <div class="card" id="stats-product-card">
-    <div class="card-title">Product Mix</div>
-    <div id="stats-product-chart"></div>
-  </div>
-
-  <!-- Daily output bar chart -->
-  <div class="card" id="stats-trend-card">
-    <div class="card-title">Daily Output (kg)</div>
-    <div id="stats-trend-chart"></div>
-  </div>
-
-  <!-- Chute breakdown -->
-  <div class="card" id="stats-chute-card">
-    <div class="card-title">Output by Chute</div>
-    <div id="stats-chute-chart"></div>
-  </div>
-
-  <!-- Operator league table -->
-  <div class="card" id="stats-ops-card">
-    <div class="card-title">Operator League Table</div>
-    <div id="stats-ops-table"></div>
-  </div>
-
-</div>
-</div>
-
 </div><!-- /screen-container -->
 
 <!-- BOTTOM NAV -->
@@ -473,10 +430,6 @@ tr:last-child td{border-bottom:none;}
   <button class="nav-btn" id="nav-edit" onclick="showScreen('screen-edit')">
     <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
     <span>Edit</span>
-  </button>
-  <button class="nav-btn" id="nav-stats" onclick="showScreen('screen-stats');renderStats()">
-    <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-    <span>Stats</span>
   </button>
 </div>
 
@@ -898,6 +851,11 @@ function renderStock(){
   const contentEl=document.getElementById('stock-content');
   filterEl.innerHTML='';contentEl.innerHTML='';
   if(!fms.length){contentEl.innerHTML='<div class="empty">No feed materials registered yet</div>';return;}
+  // Wire share button
+  var shareBtn=document.getElementById('stock-report-btn');
+  if(shareBtn){shareBtn.onclick=function(){openStockReport();};}
+  var closeRpt=document.getElementById('close-stock-report');
+  if(closeRpt){closeRpt.onclick=function(){document.getElementById('overlay-stock-report').classList.remove('open');};}
   let activeFeed=window._stockFeed||fms[0].id;
   fms.forEach(function(fm){
     const chip=document.createElement('div');chip.className='chip'+(fm.id===activeFeed?' active':'');
@@ -1667,14 +1625,13 @@ function showScreen(id){
   document.querySelectorAll('.screen').forEach(function(s){s.classList.remove('active');});
   document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});
   document.getElementById(id).classList.add('active');
-  const navMap={'screen-home':'nav-home','screen-production':'nav-production','screen-stock':'nav-stock','screen-sales':'nav-sales','screen-admin':'nav-admin','screen-edit':'nav-edit','screen-reports':'nav-edit','screen-manual':'nav-manual','screen-stats':'nav-stats'};
+  const navMap={'screen-home':'nav-home','screen-production':'nav-production','screen-stock':'nav-stock','screen-sales':'nav-sales','screen-admin':'nav-admin','screen-edit':'nav-edit','screen-reports':'nav-edit','screen-manual':'nav-manual'};
   const navId=navMap[id];if(navId){const nb=document.getElementById(navId);if(nb)nb.classList.add('active');}
   if(id==='screen-production') renderProdBagList();
   if(id==='screen-stock') renderStock();
   if(id==='screen-sales') renderSalesList();
   if(id==='screen-edit'){const d=new Date().toLocaleDateString('en-CA');document.getElementById('edit-date-filter').value=d;loadEditList();}
   if(id==='screen-manual'){initManualScreen();}
-  if(id==='screen-stats'){renderStats();}
 }
 
 // ════════════ SERVER SETTINGS ════════════
@@ -2341,305 +2298,340 @@ function manClearAll(){
 }
 
 
-// ════════════ STATISTICS ════════════
-var _statsPreset = 'today';
-var _statsFromDate = '';
-var _statsToDate = '';
-var _statsFeedId = 'all';
+// ════════════ STOCK REPORT ════════════
+function openStockReport(){
+  var overlay=document.getElementById('overlay-stock-report');
+  var body=document.getElementById('stock-report-body');
+  overlay.classList.add('open');
+  body.innerHTML='';
 
-function statsGetDateRange(){
-  var today = new Date();
-  var fmt = function(d){ return d.toLocaleDateString('en-CA'); };
-  if(_statsPreset === 'today'){ return {from: fmt(today), to: fmt(today)}; }
-  if(_statsPreset === 'week'){
-    var mon = new Date(today);
-    mon.setDate(today.getDate() - today.getDay() + (today.getDay()===0?-6:1));
-    return {from: fmt(mon), to: fmt(today)};
+  var settings=getSettings();
+  var fms=settings.feedMaterials||[];
+  var activeFeed=window._stockFeed||(fms[0]?fms[0].id:'');
+  var feedObj=fms.find(function(f){return f.id===activeFeed;})||{name:'All'};
+
+  // Mode toggle
+  var modeRow=document.createElement('div');
+  modeRow.style.cssText='display:flex;gap:8px;margin-bottom:14px;';
+  var modeStock=document.createElement('button');
+  modeStock.className='chip active';modeStock.id='rpt-mode-stock';modeStock.textContent='📦 Current Stock';
+  var modeHist=document.createElement('button');
+  modeHist.className='chip';modeHist.id='rpt-mode-hist';modeHist.textContent='📈 Total Historic';
+  modeRow.appendChild(modeStock);modeRow.appendChild(modeHist);
+  body.appendChild(modeRow);
+
+  var previewWrap=document.createElement('div');
+  previewWrap.id='rpt-preview-wrap';
+  previewWrap.style.cssText='margin-bottom:14px;';
+  body.appendChild(previewWrap);
+
+  var shareBtn=document.createElement('button');
+  shareBtn.className='btn btn-gold';shareBtn.textContent='📤 Share / Save Image';
+  shareBtn.addEventListener('click',function(){ shareStockImage(); });
+  body.appendChild(shareBtn);
+
+  var copyBtn=document.createElement('button');
+  copyBtn.className='btn btn-ghost';copyBtn.textContent='📋 Copy Text Report';
+  copyBtn.addEventListener('click',function(){ copyStockText(); });
+  body.appendChild(copyBtn);
+
+  window._rptMode='stock';
+  function setMode(m){
+    window._rptMode=m;
+    modeStock.className='chip'+(m==='stock'?' active':'');
+    modeHist.className='chip'+(m==='hist'?' active':'');
+    buildStockReportPreview(activeFeed, feedObj.name, m);
   }
-  if(_statsPreset === 'month'){
-    var m = new Date(today.getFullYear(), today.getMonth(), 1);
-    return {from: fmt(m), to: fmt(today)};
-  }
-  if(_statsPreset === 'custom'){ return {from: _statsFromDate, to: _statsToDate}; }
-  return {from: fmt(today), to: fmt(today)};
+  modeStock.addEventListener('click',function(){setMode('stock');});
+  modeHist.addEventListener('click',function(){setMode('hist');});
+  setMode('stock');
 }
 
-function statsGetBags(){
-  var db = getDB();
-  var range = statsGetDateRange();
-  return db.bags.filter(function(b){
-    if(b.qc !== 'pass') return false;
-    var d = b.date || (b.timestamp ? b.timestamp.substring(0,10) : '');
-    if(!d) return false;
-    if(d < range.from || d > range.to) return false;
-    if(_statsFeedId !== 'all' && b.feedId !== _statsFeedId) return false;
-    return true;
+function getStockReportData(feedId, mode){
+  var db=getDB();
+  var settings=getSettings();
+  var chuteMap=settings.chuteMap||{};
+  var chutes=['1','2','3','4','5','6','BH1','BH2'];
+  var allBags=db.bags.filter(function(b){ return b.feedId===feedId&&b.qc==='pass'; });
+  var soldBagIds=new Set();
+  (db.sales||[]).forEach(function(s){(s.bagIds||[]).forEach(function(id){soldBagIds.add(id);});});
+  var bags=mode==='stock'
+    ? allBags.filter(function(b){return !soldBagIds.has(b.id);})
+    : allBags;
+  var totalKg=bags.reduce(function(s,b){return s+(b.weight||0);},0);
+  var totalBags=bags.length;
+  // By chute
+  var chuteData=chutes.map(function(c){
+    var cb=bags.filter(function(b){return b.chute===c;});
+    var kg=cb.reduce(function(s,b){return s+(b.weight||0);},0);
+    var key=feedId+'_'+c;
+    var prod=chuteMap[key]?chuteMap[key].productName:'—';
+    return {chute:c,product:prod,kg:kg,bags:cb.length};
+  }).filter(function(r){return r.kg>0;});
+  // By product
+  var prodMap={};
+  bags.forEach(function(b){
+    var k=b.productName||'Unknown';
+    if(!prodMap[k])prodMap[k]={kg:0,bags:0};
+    prodMap[k].kg+=(b.weight||0);prodMap[k].bags++;
   });
+  var prodData=Object.entries(prodMap).map(function(e){
+    return {name:e[0],kg:e[1].kg,bags:e[1].bags,pct:totalKg>0?Math.round(e[1].kg/totalKg*100):0};
+  }).sort(function(a,b){return b.kg-a.kg;});
+  // Sales summary
+  var soldKg=allBags.filter(function(b){return soldBagIds.has(b.id);}).reduce(function(s,b){return s+(b.weight||0);},0);
+  return {totalKg:totalKg,totalBags:totalBags,chuteData:chuteData,prodData:prodData,soldKg:soldKg,allKg:allBags.reduce(function(s,b){return s+(b.weight||0);},0)};
 }
 
-function renderStats(){
-  // Build feed filter chips
-  var feedEl = document.getElementById('stats-feed-chips');
-  feedEl.innerHTML = '';
-  var feeds = getFeedMaterials();
-  var allChip = document.createElement('div');
-  allChip.className = 'chip' + (_statsFeedId==='all'?' active':'');
-  allChip.textContent = 'All Feeds';
-  allChip.addEventListener('click', function(){ _statsFeedId='all'; renderStats(); });
-  feedEl.appendChild(allChip);
-  feeds.forEach(function(f){
-    var c = document.createElement('div');
-    c.className = 'chip' + (_statsFeedId===f.id?' active':'');
-    c.textContent = f.name;
-    c.addEventListener('click', function(){ _statsFeedId=f.id; renderStats(); });
-    feedEl.appendChild(c);
+function buildStockReportPreview(feedId, feedName, mode){
+  var wrap=document.getElementById('rpt-preview-wrap');
+  wrap.innerHTML='';
+  var data=getStockReportData(feedId,mode);
+  var COLORS=['#f0a500','#10b981','#3b82f6','#e91e8c','#f97316','#8ab4d4','#a78bfa'];
+
+  // Build canvas
+  var W=600,PADDING=28,ROW=36,HEADER=110,CHUTE_SECTION=data.chuteData.length*ROW+50,PROD_SECTION=data.prodData.length*56+60,FOOTER=60;
+  var H=HEADER+CHUTE_SECTION+PROD_SECTION+FOOTER+20;
+  var canvas=document.createElement('canvas');
+  canvas.width=W;canvas.height=H;
+  canvas.style.cssText='width:100%;border-radius:12px;display:block;';
+  wrap.appendChild(canvas);
+  window._rptCanvas=canvas;
+  window._rptFeedId=feedId;
+  window._rptFeedName=feedName;
+  window._rptMode=mode;
+
+  var ctx=canvas.getContext('2d');
+
+  // Background
+  ctx.fillStyle='#0d1117';
+  ctx.fillRect(0,0,W,H);
+
+  // Header band
+  var grad=ctx.createLinearGradient(0,0,W,0);
+  grad.addColorStop(0,'rgba(240,165,0,0.18)');
+  grad.addColorStop(1,'rgba(240,165,0,0.04)');
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,W,HEADER);
+
+  // Gold left border
+  ctx.fillStyle='#f0a500';
+  ctx.fillRect(0,0,4,HEADER);
+
+  // Logo area
+  ctx.fillStyle='#f0a500';
+  ctx.font='bold 13px system-ui';
+  ctx.fillText('GeT ENERGY',PADDING,28);
+  ctx.fillStyle='rgba(255,255,255,0.5)';
+  ctx.font='11px system-ui';
+  ctx.fillText('Ball Mill Production Report',PADDING,44);
+
+  // Feed + mode badge
+  var badge=mode==='stock'?'CURRENT STOCK':'TOTAL HISTORIC';
+  var bColor=mode==='stock'?'#10b981':'#3b82f6';
+  ctx.fillStyle=bColor;
+  var bW=ctx.measureText(badge).width+20;
+  roundRect(ctx,W-PADDING-bW,14,bW,22,6,bColor,0.15);
+  ctx.fillStyle=bColor;
+  ctx.font='bold 10px system-ui';
+  ctx.textAlign='right';
+  ctx.fillText(badge,W-PADDING-6,29);
+  ctx.textAlign='left';
+
+  // Date
+  var now=new Date();
+  ctx.fillStyle='rgba(255,255,255,0.4)';
+  ctx.font='10px system-ui';
+  ctx.fillText(now.toLocaleDateString('en-ZA',{weekday:'long',year:'numeric',month:'long',day:'numeric'})+' '+now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}),PADDING,60);
+
+  // Feed material name
+  ctx.fillStyle='#ffffff';
+  ctx.font='bold 22px system-ui';
+  ctx.fillText(feedName,PADDING,90);
+
+  // Total KPI row
+  var kpis=[
+    {label:'Total '+( mode==='stock'?'In Stock':'Produced'),val:data.totalKg.toLocaleString()+' kg'},
+    {label:'Bags',val:data.totalBags.toString()},
+    {label:'Sold',val:data.soldKg.toLocaleString()+' kg'},
+  ];
+  var kpiX=PADDING,kpiY=108;
+  kpis.forEach(function(k){
+    ctx.fillStyle='rgba(255,255,255,0.45)';
+    ctx.font='10px system-ui';
+    ctx.fillText(k.label,kpiX,kpiY);
+    ctx.fillStyle='#f0a500';
+    ctx.font='bold 14px system-ui';
+    ctx.fillText(k.val,kpiX,kpiY+16);
+    kpiX+=160;
   });
 
-  // Preset chip listeners
-  document.querySelectorAll('#stats-preset-chips .chip').forEach(function(chip){
-    chip.className = 'chip' + (chip.dataset.preset===_statsPreset?' active':'');
-    chip.onclick = function(){
-      _statsPreset = this.dataset.preset;
-      var customDiv = document.getElementById('stats-custom-range');
-      customDiv.style.display = _statsPreset==='custom'?'block':'none';
-      if(_statsPreset !== 'custom') renderStats();
-    };
+  var y=HEADER+10;
+
+  // ── Section: By Chute ──
+  ctx.fillStyle='rgba(255,255,255,0.08)';
+  ctx.fillRect(0,y,W,30);
+  ctx.fillStyle='rgba(255,255,255,0.5)';
+  ctx.font='bold 10px system-ui';
+  ctx.fillText('CHUTE BREAKDOWN',PADDING,y+19);
+  y+=30;
+
+  // Chute table header
+  ctx.fillStyle='rgba(255,255,255,0.25)';
+  ctx.font='9px system-ui';
+  ctx.fillText('CHUTE',PADDING,y+14);
+  ctx.fillText('PRODUCT',PADDING+80,y+14);
+  ctx.fillText('BAGS',PADDING+280,y+14);
+  ctx.fillText('KG',PADDING+340,y+14);
+  ctx.fillText('SHARE',PADDING+420,y+14);
+  y+=20;
+
+  data.chuteData.forEach(function(row,i){
+    var rowBg=i%2===0?'rgba(255,255,255,0.02)':'transparent';
+    ctx.fillStyle=rowBg;
+    ctx.fillRect(0,y,W,ROW);
+    // chute num
+    ctx.fillStyle='#f0a500';
+    ctx.font='bold 13px system-ui';
+    ctx.fillText(row.chute,PADDING,y+22);
+    // product
+    ctx.fillStyle='rgba(255,255,255,0.7)';
+    ctx.font='12px system-ui';
+    ctx.fillText(row.product,PADDING+80,y+22);
+    // bags
+    ctx.fillStyle='rgba(255,255,255,0.5)';
+    ctx.font='12px system-ui';
+    ctx.fillText(row.bags.toString(),PADDING+280,y+22);
+    // kg
+    ctx.fillStyle='#ffffff';
+    ctx.font='bold 13px system-ui';
+    ctx.fillText(row.kg.toLocaleString(),PADDING+340,y+22);
+    // bar
+    var pct=data.totalKg>0?row.kg/data.totalKg:0;
+    var barW=100,barH=6,barX=PADDING+420,barY=y+15;
+    ctx.fillStyle='rgba(255,255,255,0.08)';
+    roundRect(ctx,barX,barY,barW,barH,3,'rgba(255,255,255,0.08)',1);
+    ctx.fillStyle='#f0a500';
+    roundRect(ctx,barX,barY,Math.max(4,barW*pct),barH,3,'#f0a500',1);
+    ctx.fillStyle='rgba(255,255,255,0.4)';
+    ctx.font='9px system-ui';
+    ctx.fillText(Math.round(pct*100)+'%',barX+barW+6,barY+6);
+    y+=ROW;
   });
 
-  // Custom range apply
-  var applyBtn = document.getElementById('stats-apply-btn');
-  if(applyBtn){
-    applyBtn.onclick = function(){
-      _statsFromDate = document.getElementById('stats-from').value;
-      _statsToDate = document.getElementById('stats-to').value;
-      if(!_statsFromDate || !_statsToDate){ alert('Please select both dates.'); return; }
-      renderStats();
-    };
-  }
+  y+=10;
 
-  var bags = statsGetBags();
-  var range = statsGetDateRange();
+  // ── Section: Product Mix ──
+  ctx.fillStyle='rgba(255,255,255,0.08)';
+  ctx.fillRect(0,y,W,30);
+  ctx.fillStyle='rgba(255,255,255,0.5)';
+  ctx.font='bold 10px system-ui';
+  ctx.fillText('PRODUCT MIX & CONVERSION',PADDING,y+19);
+  y+=38;
 
-  // ── KPI tiles ──
-  var totalKg = bags.reduce(function(s,b){ return s + (b.weight||0); }, 0);
-  var totalBags = bags.length;
-  var rejectBags = getDB().bags.filter(function(b){
-    var d = b.date || (b.timestamp ? b.timestamp.substring(0,10) : '');
-    if(d < range.from || d > range.to) return false;
-    if(_statsFeedId !== 'all' && b.feedId !== _statsFeedId) return false;
-    return b.qc === 'reject';
-  }).length;
-  var rejectPct = (totalBags+rejectBags)>0 ? Math.round(rejectBags/(totalBags+rejectBags)*100) : 0;
-
-  // Unique days with production
-  var days = {};
-  bags.forEach(function(b){ days[b.date||(b.timestamp||'').substring(0,10)] = true; });
-  var dayCount = Object.keys(days).length || 1;
-  var avgKgPerDay = Math.round(totalKg / dayCount);
-
-  var kpiEl = document.getElementById('stats-kpi-grid');
-  kpiEl.innerHTML = '';
-  function kpiTile(icon, label, val, sub, color){
-    var t = document.createElement('div');
-    t.className = 'stock-tile';
-    t.innerHTML = '<div class="stock-tile-label">'+icon+' '+label+'</div>'
-      +'<div class="stock-tile-val" style="color:'+(color||'var(--gold)')+';">'+val+'</div>'
-      +(sub?'<div class="stock-tile-unit">'+sub+'</div>':'');
-    kpiEl.appendChild(t);
-  }
-  kpiTile('⚖️','Total Output', totalKg.toLocaleString()+' kg', totalBags+' bags');
-  kpiTile('📅','Avg / Day', avgKgPerDay.toLocaleString()+' kg', dayCount+' day'+(dayCount!==1?'s':''));
-  kpiTile('🏆','Best Day', function(){
-    var byDay={};
-    bags.forEach(function(b){ var d=b.date||(b.timestamp||'').substring(0,10); byDay[d]=(byDay[d]||0)+(b.weight||0); });
-    var best=Object.values(byDay).reduce(function(m,v){return v>m?v:m;},0);
-    return best>0?best.toLocaleString()+' kg':'—';
-  }(), 'single day', 'var(--green)');
-  kpiTile('❌','Reject Rate', rejectPct+'%', rejectBags+' bags rejected', rejectPct>10?'var(--red)':'var(--muted)');
-
-  // ── Product mix ──
-  var prodMap = {};
-  bags.forEach(function(b){
-    var k = b.productName||'Unknown';
-    prodMap[k] = (prodMap[k]||0) + (b.weight||0);
+  data.prodData.forEach(function(prod,i){
+    var col=COLORS[i%COLORS.length];
+    // Colour dot
+    ctx.fillStyle=col;
+    ctx.beginPath();ctx.arc(PADDING+6,y+10,6,0,Math.PI*2);ctx.fill();
+    // Name
+    ctx.fillStyle='#ffffff';
+    ctx.font='bold 13px system-ui';
+    ctx.fillText(prod.name,PADDING+18,y+15);
+    // pct big
+    ctx.fillStyle=col;
+    ctx.font='bold 22px system-ui';
+    ctx.textAlign='right';
+    ctx.fillText(prod.pct+'%',W-PADDING,y+18);
+    ctx.textAlign='left';
+    // kg + bags sub
+    ctx.fillStyle='rgba(255,255,255,0.45)';
+    ctx.font='11px system-ui';
+    ctx.fillText(prod.kg.toLocaleString()+' kg  ·  '+prod.bags+' bags',PADDING+18,y+30);
+    // progress bar
+    var barY=y+38,barW=W-PADDING*2,barH=7;
+    ctx.fillStyle='rgba(255,255,255,0.06)';
+    roundRect(ctx,PADDING,barY,barW,barH,4,'rgba(255,255,255,0.06)',1);
+    ctx.fillStyle=col;
+    roundRect(ctx,PADDING,barY,Math.max(6,barW*(prod.pct/100)),barH,4,col,1);
+    y+=56;
   });
-  var prodEl = document.getElementById('stats-product-chart');
-  prodEl.innerHTML = '';
-  var prodEntries = Object.entries(prodMap).sort(function(a,b){return b[1]-a[1];});
-  var PROD_COLORS = ['#f0a500','#10b981','#3b82f6','#e91e8c','#f97316','#8ab4d4','#a78bfa','#f59e0b'];
-  if(prodEntries.length === 0){
-    prodEl.innerHTML = '<div class="empty" style="padding:20px;">No data for this period</div>';
-  } else {
-    // Horizontal bar chart
-    prodEntries.forEach(function(entry, i){
-      var name = entry[0], kg = entry[1];
-      var pct = totalKg > 0 ? (kg/totalKg*100) : 0;
-      var row = document.createElement('div');
-      row.style.cssText = 'margin-bottom:10px;';
-      var lbl = document.createElement('div');
-      lbl.style.cssText = 'display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;';
-      lbl.innerHTML = '<span style="font-weight:600;color:var(--white);">'+name+'</span>'
-        +'<span style="color:var(--muted);">'+kg.toLocaleString()+' kg &nbsp;<strong style="color:'+PROD_COLORS[i%PROD_COLORS.length]+';">'+pct.toFixed(1)+'%</strong></span>';
-      var track = document.createElement('div');
-      track.style.cssText = 'background:var(--surface2);border-radius:4px;height:10px;overflow:hidden;';
-      var fill = document.createElement('div');
-      fill.style.cssText = 'height:100%;border-radius:4px;background:'+PROD_COLORS[i%PROD_COLORS.length]+';width:'+pct.toFixed(1)+'%;transition:width .4s;';
-      track.appendChild(fill);
-      row.appendChild(lbl);
-      row.appendChild(track);
-      prodEl.appendChild(row);
-    });
-  }
 
-  // ── Daily trend bar chart ──
-  var byDay = {};
-  bags.forEach(function(b){
-    var d = b.date||(b.timestamp||'').substring(0,10);
-    byDay[d] = (byDay[d]||0) + (b.weight||0);
-  });
-  var trendEl = document.getElementById('stats-trend-chart');
-  trendEl.innerHTML = '';
-  var dayEntries = Object.entries(byDay).sort(function(a,b){return a[0]<b[0]?-1:1;});
-  if(dayEntries.length === 0){
-    trendEl.innerHTML = '<div class="empty" style="padding:20px;">No data for this period</div>';
-  } else {
-    var maxKg = Math.max.apply(null, dayEntries.map(function(e){return e[1];}));
-    var chartH = 100;
-    var barW = Math.min(36, Math.floor((window.innerWidth - 60) / dayEntries.length));
-    var svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-    var svgW = Math.max(dayEntries.length * (barW+6), window.innerWidth - 60);
-    svg.setAttribute('viewBox','0 0 '+svgW+' '+(chartH+40));
-    svg.setAttribute('width','100%');
-    svg.setAttribute('height', chartH+40);
-    svg.style.display = 'block';
-    dayEntries.forEach(function(entry, i){
-      var d = entry[0], kg = entry[1];
-      var barH = maxKg > 0 ? Math.max(4, Math.round(kg/maxKg*chartH)) : 4;
-      var x = i*(barW+6);
-      var rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
-      rect.setAttribute('x', x);
-      rect.setAttribute('y', chartH - barH);
-      rect.setAttribute('width', barW);
-      rect.setAttribute('height', barH);
-      rect.setAttribute('rx','3');
-      rect.setAttribute('fill','var(--gold)');
-      rect.setAttribute('opacity','0.85');
-      svg.appendChild(rect);
-      // kg label on top
-      var txt = document.createElementNS('http://www.w3.org/2000/svg','text');
-      txt.setAttribute('x', x + barW/2);
-      txt.setAttribute('y', chartH - barH - 4);
-      txt.setAttribute('text-anchor','middle');
-      txt.setAttribute('font-size','8');
-      txt.setAttribute('fill','var(--muted)');
-      txt.textContent = kg >= 1000 ? (kg/1000).toFixed(1)+'t' : kg+'kg';
-      svg.appendChild(txt);
-      // date label below
-      var lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
-      lbl.setAttribute('x', x + barW/2);
-      lbl.setAttribute('y', chartH + 14);
-      lbl.setAttribute('text-anchor','middle');
-      lbl.setAttribute('font-size','8');
-      lbl.setAttribute('fill','var(--muted)');
-      var parts = d.split('-');
-      lbl.textContent = parts[2]+'/'+parts[1];
-      svg.appendChild(lbl);
-    });
-    var wrap = document.createElement('div');
-    wrap.style.cssText = 'overflow-x:auto;padding-bottom:4px;';
-    wrap.appendChild(svg);
-    trendEl.appendChild(wrap);
-  }
+  // Footer
+  y+=10;
+  ctx.fillStyle='rgba(255,255,255,0.06)';
+  ctx.fillRect(0,y,W,1);
+  ctx.fillStyle='rgba(255,255,255,0.3)';
+  ctx.font='10px system-ui';
+  ctx.fillText('GeT Energy (Pty) Ltd  ·  Erf 60, 1 John van Niekerk Rd, Atlantis Industrial',PADDING,y+18);
+  ctx.textAlign='right';
+  ctx.fillText('Generated by GeT Ball Mill App',W-PADDING,y+18);
+  ctx.textAlign='left';
+}
 
-  // ── Chute breakdown ──
-  var chuteMap2 = {};
-  bags.forEach(function(b){
-    var k = 'Chute '+(b.chute||'?');
-    if(!chuteMap2[k]) chuteMap2[k] = {kg:0, bags:0, prod:b.productName||'—'};
-    chuteMap2[k].kg += (b.weight||0);
-    chuteMap2[k].bags++;
-  });
-  var chuteEl = document.getElementById('stats-chute-chart');
-  chuteEl.innerHTML = '';
-  var chuteEntries = Object.entries(chuteMap2).sort(function(a,b){return b[1].kg-a[1].kg;});
-  if(chuteEntries.length === 0){
-    chuteEl.innerHTML = '<div class="empty" style="padding:20px;">No data</div>';
-  } else {
-    var tbl = document.createElement('div');
-    tbl.className = 'tbl-wrap';
-    var table = document.createElement('table');
-    table.innerHTML = '<thead><tr><th>Chute</th><th>Product</th><th>Bags</th><th>kg</th><th>Share</th></tr></thead>';
-    var tbody = document.createElement('tbody');
-    chuteEntries.forEach(function(entry){
-      var chute=entry[0], info=entry[1];
-      var pct = totalKg>0?((info.kg/totalKg)*100).toFixed(1):'0';
-      var tr = document.createElement('tr');
-      tr.innerHTML = '<td style="font-weight:700;">'+chute+'</td>'
-        +'<td style="color:var(--muted);font-size:11px;">'+info.prod+'</td>'
-        +'<td>'+info.bags+'</td>'
-        +'<td style="font-weight:700;color:var(--gold);">'+info.kg.toLocaleString()+'</td>'
-        +'<td><div style="display:flex;align-items:center;gap:6px;">'
-        +'<div style="background:var(--surface2);border-radius:3px;height:6px;width:50px;overflow:hidden;">'
-        +'<div style="height:100%;background:var(--steel);border-radius:3px;width:'+pct+'%;"></div></div>'
-        +'<span style="font-size:11px;color:var(--muted);">'+pct+'%</span></div></td>';
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-    tbl.appendChild(table);
-    chuteEl.appendChild(tbl);
-  }
+function roundRect(ctx,x,y,w,h,r,color,alpha){
+  ctx.globalAlpha=alpha||1;
+  ctx.fillStyle=color;
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();ctx.fill();
+  ctx.globalAlpha=1;
+}
 
-  // ── Operator league table ──
-  var opMap = {};
-  bags.forEach(function(b){
-    var op = b.operator || 'Unknown';
-    if(!opMap[op]) opMap[op] = {kg:0, bags:0, dayKg:0, dayBags:0, nightKg:0, nightBags:0, dates:{}};
-    opMap[op].kg += (b.weight||0);
-    opMap[op].bags++;
-    // Determine shift from timestamp hour
-    var hour = b.timestamp ? new Date(b.timestamp).getHours() : 8;
-    var isDayShift = hour >= 7 && hour < 19;
-    if(isDayShift){ opMap[op].dayKg += (b.weight||0); opMap[op].dayBags++; }
-    else { opMap[op].nightKg += (b.weight||0); opMap[op].nightBags++; }
-    var d = b.date||(b.timestamp||'').substring(0,10);
-    if(d) opMap[op].dates[d]=true;
-  });
-  var opEntries = Object.entries(opMap).sort(function(a,b){return b[1].kg-a[1].kg;});
-  var opsEl = document.getElementById('stats-ops-table');
-  opsEl.innerHTML = '';
-  if(opEntries.length === 0){
-    opsEl.innerHTML = '<div class="empty" style="padding:20px;">No data</div>';
-  } else {
-    var opTbl = document.createElement('div');
-    opTbl.className = 'tbl-wrap';
-    var opTable = document.createElement('table');
-    opTable.innerHTML = '<thead><tr><th>#</th><th>Operator</th><th>Total kg</th><th>Bags</th><th>Day kg</th><th>Night kg</th><th>Shifts</th></tr></thead>';
-    var opTbody = document.createElement('tbody');
-    opEntries.forEach(function(entry, i){
-      var op=entry[0], d=entry[1];
-      var medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1);
-      var tr = document.createElement('tr');
-      tr.style.cssText = i===0?'background:rgba(240,165,0,0.07);':'';
-      tr.innerHTML = '<td style="font-size:14px;">'+medal+'</td>'
-        +'<td style="font-weight:700;">'+op+'</td>'
-        +'<td style="font-weight:800;color:var(--gold);">'+d.kg.toLocaleString()+'</td>'
-        +'<td style="color:var(--muted);">'+d.bags+'</td>'
-        +'<td style="color:var(--steel);font-size:11px;">'+d.dayKg.toLocaleString()+'<br><span style="color:var(--muted);font-size:10px;">'+d.dayBags+' bags</span></td>'
-        +'<td style="color:#a78bfa;font-size:11px;">'+d.nightKg.toLocaleString()+'<br><span style="color:var(--muted);font-size:10px;">'+d.nightBags+' bags</span></td>'
-        +'<td style="color:var(--muted);">'+Object.keys(d.dates).length+'</td>';
-      opTbody.appendChild(tr);
-    });
-    opTable.appendChild(opTbody);
-    opTbl.appendChild(opTable);
-    opsEl.appendChild(opTbl);
-    // Best performer callout
-    if(opEntries.length > 0){
-      var best = opEntries[0];
-      var callout = document.createElement('div');
-      callout.style.cssText = 'margin-top:10px;padding:10px 12px;background:rgba(240,165,0,0.08);border:1px solid rgba(240,165,0,0.2);border-radius:var(--radius-sm);font-size:12px;';
-      callout.innerHTML = '🏆 <strong>'+best[0]+'</strong> leads with <strong>'+best[1].kg.toLocaleString()+' kg</strong> ('+best[1].bags+' bags) in this period.';
-      opsEl.appendChild(callout);
+function shareStockImage(){
+  var canvas=window._rptCanvas;
+  if(!canvas){alert('No report generated yet.');return;}
+  canvas.toBlob(function(blob){
+    var feedName=(window._rptFeedName||'stock').replace(/\s+/g,'-').toLowerCase();
+    var mode=window._rptMode||'stock';
+    var fname='get-ballmill-'+feedName+'-'+mode+'-'+new Date().toLocaleDateString('en-CA')+'.png';
+    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],'x.png',{type:'image/png'})]})){
+      navigator.share({files:[new File([blob],fname,{type:'image/png'})],title:'GeT Ball Mill Stock Report'});
+    } else {
+      var url=URL.createObjectURL(blob);
+      var a=document.createElement('a');a.href=url;a.download=fname;a.click();
+      setTimeout(function(){URL.revokeObjectURL(url);},2000);
     }
+  },'image/png');
+}
+
+function copyStockText(){
+  var feedId=window._rptFeedId;
+  var feedName=window._rptFeedName||'';
+  var mode=window._rptMode||'stock';
+  var data=getStockReportData(feedId,mode);
+  var now=new Date();
+  var lines=[
+    '*GeT Energy Ball Mill*',
+    '*Stock Report — '+feedName+'*',
+    (mode==='stock'?'📦 Current Stock':'📈 Total Historic')+' · '+now.toLocaleDateString('en-ZA')+' '+now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}),
+    '',
+    '*CHUTE BREAKDOWN*',
+  ];
+  data.chuteData.forEach(function(r){
+    var pct=data.totalKg>0?Math.round(r.kg/data.totalKg*100):0;
+    lines.push('Chute '+r.chute+' ('+r.product+'): '+r.kg.toLocaleString()+' kg · '+r.bags+' bags · '+pct+'%');
+  });
+  lines.push('');
+  lines.push('*PRODUCT MIX*');
+  data.prodData.forEach(function(p){
+    lines.push(p.name+': '+p.pct+'% — '+p.kg.toLocaleString()+' kg ('+p.bags+' bags)');
+  });
+  lines.push('');
+  lines.push('*TOTALS*');
+  lines.push('Total '+(mode==='stock'?'In Stock':'Produced')+': '+data.totalKg.toLocaleString()+' kg ('+data.totalBags+' bags)');
+  if(mode==='hist') lines.push('Sold: '+data.soldKg.toLocaleString()+' kg');
+  lines.push('');
+  lines.push('_GeT Energy (Pty) Ltd · Atlantis Industrial_');
+  var txt=lines.join('\n');
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(txt).then(function(){alert('✅ Copied! Paste into WhatsApp.');});
+  } else {
+    var ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    alert('✅ Copied! Paste into WhatsApp.');
   }
 }
 

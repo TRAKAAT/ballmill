@@ -277,7 +277,7 @@ tr:last-child td{border-bottom:none;}
 <div class="overlay" id="overlay-stock-report">
   <div class="modal-sheet" style="max-height:95dvh;">
     <div class="modal-header">
-      <div class="modal-title">📊 Stock Report</div>
+      <div class="modal-title">Stock Report</div>
       <button class="modal-close" id="close-stock-report">✕</button>
     </div>
     <div id="stock-report-body"></div>
@@ -851,11 +851,10 @@ function renderStock(){
   const contentEl=document.getElementById('stock-content');
   filterEl.innerHTML='';contentEl.innerHTML='';
   if(!fms.length){contentEl.innerHTML='<div class="empty">No feed materials registered yet</div>';return;}
-  // Wire share button
-  var shareBtn=document.getElementById('stock-report-btn');
-  if(shareBtn){shareBtn.onclick=function(){openStockReport();};}
-  var closeRpt=document.getElementById('close-stock-report');
-  if(closeRpt){closeRpt.onclick=function(){document.getElementById('overlay-stock-report').classList.remove('open');};}
+  var _srBtn=document.getElementById('stock-report-btn');
+  if(_srBtn){_srBtn.onclick=function(){openStockReport();};}
+  var _srClose=document.getElementById('close-stock-report');
+  if(_srClose){_srClose.onclick=function(){document.getElementById('overlay-stock-report').classList.remove('open');};}
   let activeFeed=window._stockFeed||fms[0].id;
   fms.forEach(function(fm){
     const chip=document.createElement('div');chip.className='chip'+(fm.id===activeFeed?' active':'');
@@ -2304,47 +2303,46 @@ function openStockReport(){
   var body=document.getElementById('stock-report-body');
   overlay.classList.add('open');
   body.innerHTML='';
-
   var settings=getSettings();
   var fms=settings.feedMaterials||[];
   var activeFeed=window._stockFeed||(fms[0]?fms[0].id:'');
-  var feedObj=fms.find(function(f){return f.id===activeFeed;})||{name:'All'};
+  var feedObj=fms.find(function(f){return f.id===activeFeed;})||{name:'Unknown'};
 
   // Mode toggle
   var modeRow=document.createElement('div');
-  modeRow.style.cssText='display:flex;gap:8px;margin-bottom:14px;';
-  var modeStock=document.createElement('button');
-  modeStock.className='chip active';modeStock.id='rpt-mode-stock';modeStock.textContent='📦 Current Stock';
-  var modeHist=document.createElement('button');
-  modeHist.className='chip';modeHist.id='rpt-mode-hist';modeHist.textContent='📈 Total Historic';
-  modeRow.appendChild(modeStock);modeRow.appendChild(modeHist);
+  modeRow.style.cssText='display:flex;gap:8px;margin-bottom:16px;';
+  var btnStock=document.createElement('button');btnStock.className='chip active';btnStock.textContent='📦 Current Stock';
+  var btnHist=document.createElement('button');btnHist.className='chip';btnHist.textContent='📈 Total Historic';
+  modeRow.appendChild(btnStock);modeRow.appendChild(btnHist);
   body.appendChild(modeRow);
 
-  var previewWrap=document.createElement('div');
-  previewWrap.id='rpt-preview-wrap';
-  previewWrap.style.cssText='margin-bottom:14px;';
-  body.appendChild(previewWrap);
+  var canvas=document.createElement('canvas');
+  canvas.style.cssText='width:100%;border-radius:12px;display:block;margin-bottom:14px;';
+  body.appendChild(canvas);
+  window._srCanvas=canvas;
+  window._srFeedId=activeFeed;
+  window._srFeedName=feedObj.name;
+  window._srMode='stock';
 
   var shareBtn=document.createElement('button');
-  shareBtn.className='btn btn-gold';shareBtn.textContent='📤 Share / Save Image';
-  shareBtn.addEventListener('click',function(){ shareStockImage(); });
+  shareBtn.className='btn btn-gold';shareBtn.textContent='📤 Share Image';
+  shareBtn.addEventListener('click',shareStockImage);
   body.appendChild(shareBtn);
 
   var copyBtn=document.createElement('button');
-  copyBtn.className='btn btn-ghost';copyBtn.textContent='📋 Copy Text Report';
-  copyBtn.addEventListener('click',function(){ copyStockText(); });
+  copyBtn.className='btn btn-ghost';copyBtn.textContent='📋 Copy as Text';
+  copyBtn.addEventListener('click',copyStockText);
   body.appendChild(copyBtn);
 
-  window._rptMode='stock';
   function setMode(m){
-    window._rptMode=m;
-    modeStock.className='chip'+(m==='stock'?' active':'');
-    modeHist.className='chip'+(m==='hist'?' active':'');
-    buildStockReportPreview(activeFeed, feedObj.name, m);
+    window._srMode=m;
+    btnStock.className='chip'+(m==='stock'?' active':'');
+    btnHist.className='chip'+(m==='hist'?' active':'');
+    drawStockReport();
   }
-  modeStock.addEventListener('click',function(){setMode('stock');});
-  modeHist.addEventListener('click',function(){setMode('hist');});
-  setMode('stock');
+  btnStock.addEventListener('click',function(){setMode('stock');});
+  btnHist.addEventListener('click',function(){setMode('hist');});
+  drawStockReport();
 }
 
 function getStockReportData(feedId, mode){
@@ -2352,23 +2350,11 @@ function getStockReportData(feedId, mode){
   var settings=getSettings();
   var chuteMap=settings.chuteMap||{};
   var chutes=['1','2','3','4','5','6','BH1','BH2'];
-  var allBags=db.bags.filter(function(b){ return b.feedId===feedId&&b.qc==='pass'; });
-  var soldBagIds=new Set();
-  (db.sales||[]).forEach(function(s){(s.bagIds||[]).forEach(function(id){soldBagIds.add(id);});});
-  var bags=mode==='stock'
-    ? allBags.filter(function(b){return !soldBagIds.has(b.id);})
-    : allBags;
+  var allPass=db.bags.filter(function(b){return b.feedId===feedId&&b.qc==='pass';});
+  var soldIds=new Set();
+  (db.sales||[]).forEach(function(s){(s.bagIds||[]).forEach(function(id){soldIds.add(id);});});
+  var bags=mode==='stock'?allPass.filter(function(b){return !soldIds.has(b.id);}):allPass;
   var totalKg=bags.reduce(function(s,b){return s+(b.weight||0);},0);
-  var totalBags=bags.length;
-  // By chute
-  var chuteData=chutes.map(function(c){
-    var cb=bags.filter(function(b){return b.chute===c;});
-    var kg=cb.reduce(function(s,b){return s+(b.weight||0);},0);
-    var key=feedId+'_'+c;
-    var prod=chuteMap[key]?chuteMap[key].productName:'—';
-    return {chute:c,product:prod,kg:kg,bags:cb.length};
-  }).filter(function(r){return r.kg>0;});
-  // By product
   var prodMap={};
   bags.forEach(function(b){
     var k=b.productName||'Unknown';
@@ -2376,201 +2362,211 @@ function getStockReportData(feedId, mode){
     prodMap[k].kg+=(b.weight||0);prodMap[k].bags++;
   });
   var prodData=Object.entries(prodMap).map(function(e){
-    return {name:e[0],kg:e[1].kg,bags:e[1].bags,pct:totalKg>0?Math.round(e[1].kg/totalKg*100):0};
+    return {name:e[0],kg:e[1].kg,bags:e[1].bags,pct:totalKg>0?+(e[1].kg/totalKg*100).toFixed(1):0};
   }).sort(function(a,b){return b.kg-a.kg;});
-  // Sales summary
-  var soldKg=allBags.filter(function(b){return soldBagIds.has(b.id);}).reduce(function(s,b){return s+(b.weight||0);},0);
-  return {totalKg:totalKg,totalBags:totalBags,chuteData:chuteData,prodData:prodData,soldKg:soldKg,allKg:allBags.reduce(function(s,b){return s+(b.weight||0);},0)};
+  var chuteData=chutes.map(function(c){
+    var cb=bags.filter(function(b){return b.chute===c;});
+    var kg=cb.reduce(function(s,b){return s+(b.weight||0);},0);
+    var key=feedId+'_'+c;
+    var prod=chuteMap[key]?chuteMap[key].productName:'—';
+    return {chute:c,prod:prod,kg:kg,bags:cb.length};
+  }).filter(function(r){return r.kg>0;});
+  var soldKg=allPass.filter(function(b){return soldIds.has(b.id);}).reduce(function(s,b){return s+(b.weight||0);},0);
+  return {totalKg:totalKg,bags:bags.length,prodData:prodData,chuteData:chuteData,soldKg:soldKg};
 }
 
-function buildStockReportPreview(feedId, feedName, mode){
-  var wrap=document.getElementById('rpt-preview-wrap');
-  wrap.innerHTML='';
+function drawStockReport(){
+  var canvas=window._srCanvas;
+  var feedId=window._srFeedId;
+  var feedName=window._srFeedName;
+  var mode=window._srMode;
   var data=getStockReportData(feedId,mode);
-  var COLORS=['#f0a500','#10b981','#3b82f6','#e91e8c','#f97316','#8ab4d4','#a78bfa'];
+  var COLORS=['#f0a500','#10b981','#3b82f6','#e91e8c','#f97316','#a78bfa','#8ab4d4'];
 
-  // Build canvas
-  var W=600,PADDING=28,ROW=36,HEADER=110,CHUTE_SECTION=data.chuteData.length*ROW+50,PROD_SECTION=data.prodData.length*56+60,FOOTER=60;
-  var H=HEADER+CHUTE_SECTION+PROD_SECTION+FOOTER+20;
-  var canvas=document.createElement('canvas');
-  canvas.width=W;canvas.height=H;
-  canvas.style.cssText='width:100%;border-radius:12px;display:block;';
-  wrap.appendChild(canvas);
-  window._rptCanvas=canvas;
-  window._rptFeedId=feedId;
-  window._rptFeedName=feedName;
-  window._rptMode=mode;
+  var W=640;
+  var PAD=32;
+  var INNER=W-PAD*2;
+  // Calculate height dynamically
+  var HEADER_H=130;
+  var MODE_H=44;
+  var PROD_H=data.prodData.length*80+50;
+  var DIV_H=28;
+  var CHUTE_H=data.chuteData.length*42+50;
+  var FOOTER_H=48;
+  var H=HEADER_H+MODE_H+PROD_H+DIV_H+CHUTE_H+FOOTER_H;
 
+  canvas.width=W;
+  canvas.height=H;
   var ctx=canvas.getContext('2d');
 
-  // Background
-  ctx.fillStyle='#0d1117';
+  // ── Background ──
+  ctx.fillStyle='#111827';
   ctx.fillRect(0,0,W,H);
 
-  // Header band
-  var grad=ctx.createLinearGradient(0,0,W,0);
-  grad.addColorStop(0,'rgba(240,165,0,0.18)');
-  grad.addColorStop(1,'rgba(240,165,0,0.04)');
-  ctx.fillStyle=grad;
-  ctx.fillRect(0,0,W,HEADER);
+  // Subtle grid lines
+  ctx.strokeStyle='rgba(255,255,255,0.03)';
+  ctx.lineWidth=1;
+  for(var gx=0;gx<W;gx+=40){ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,H);ctx.stroke();}
 
-  // Gold left border
+  // ── Header ──
+  // Top accent bar
   ctx.fillStyle='#f0a500';
-  ctx.fillRect(0,0,4,HEADER);
+  ctx.fillRect(0,0,W,4);
 
-  // Logo area
+  // Company + title
   ctx.fillStyle='#f0a500';
-  ctx.font='bold 13px system-ui';
-  ctx.fillText('GeT ENERGY',PADDING,28);
-  ctx.fillStyle='rgba(255,255,255,0.5)';
-  ctx.font='11px system-ui';
-  ctx.fillText('Ball Mill Production Report',PADDING,44);
+  ctx.font='bold 11px system-ui,sans-serif';
+  ctx.letterSpacing='2px';
+  ctx.fillText('GET ENERGY  ·  BALL MILL',PAD,32);
+  ctx.letterSpacing='0px';
 
-  // Feed + mode badge
-  var badge=mode==='stock'?'CURRENT STOCK':'TOTAL HISTORIC';
-  var bColor=mode==='stock'?'#10b981':'#3b82f6';
-  ctx.fillStyle=bColor;
-  var bW=ctx.measureText(badge).width+20;
-  roundRect(ctx,W-PADDING-bW,14,bW,22,6,bColor,0.15);
-  ctx.fillStyle=bColor;
-  ctx.font='bold 10px system-ui';
-  ctx.textAlign='right';
-  ctx.fillText(badge,W-PADDING-6,29);
-  ctx.textAlign='left';
-
-  // Date
-  var now=new Date();
-  ctx.fillStyle='rgba(255,255,255,0.4)';
-  ctx.font='10px system-ui';
-  ctx.fillText(now.toLocaleDateString('en-ZA',{weekday:'long',year:'numeric',month:'long',day:'numeric'})+' '+now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}),PADDING,60);
-
-  // Feed material name
   ctx.fillStyle='#ffffff';
-  ctx.font='bold 22px system-ui';
-  ctx.fillText(feedName,PADDING,90);
+  ctx.font='bold 26px system-ui,sans-serif';
+  ctx.fillText('Stock Report',PAD,64);
 
-  // Total KPI row
-  var kpis=[
-    {label:'Total '+( mode==='stock'?'In Stock':'Produced'),val:data.totalKg.toLocaleString()+' kg'},
-    {label:'Bags',val:data.totalBags.toString()},
-    {label:'Sold',val:data.soldKg.toLocaleString()+' kg'},
-  ];
-  var kpiX=PADDING,kpiY=108;
-  kpis.forEach(function(k){
-    ctx.fillStyle='rgba(255,255,255,0.45)';
-    ctx.font='10px system-ui';
-    ctx.fillText(k.label,kpiX,kpiY);
-    ctx.fillStyle='#f0a500';
-    ctx.font='bold 14px system-ui';
-    ctx.fillText(k.val,kpiX,kpiY+16);
-    kpiX+=160;
-  });
+  ctx.fillStyle='rgba(255,255,255,0.4)';
+  ctx.font='13px system-ui,sans-serif';
+  var now=new Date();
+  var dateStr=now.toLocaleDateString('en-ZA',{weekday:'short',day:'numeric',month:'short',year:'numeric'})+' · '+now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'});
+  ctx.fillText(dateStr,PAD,84);
 
-  var y=HEADER+10;
+  // Feed material pill
+  var pillTxt=feedName;
+  ctx.font='bold 12px system-ui,sans-serif';
+  var pillW=ctx.measureText(pillTxt).width+24;
+  srRoundRect(ctx,PAD,98,pillW,26,6,'rgba(240,165,0,0.15)');
+  ctx.strokeStyle='rgba(240,165,0,0.4)';ctx.lineWidth=1;
+  srRoundRectStroke(ctx,PAD,98,pillW,26,6);
+  ctx.fillStyle='#f0a500';
+  ctx.fillText(pillTxt,PAD+12,116);
 
-  // ── Section: By Chute ──
-  ctx.fillStyle='rgba(255,255,255,0.08)';
-  ctx.fillRect(0,y,W,30);
-  ctx.fillStyle='rgba(255,255,255,0.5)';
-  ctx.font='bold 10px system-ui';
-  ctx.fillText('CHUTE BREAKDOWN',PADDING,y+19);
-  y+=30;
+  var y=HEADER_H;
 
-  // Chute table header
-  ctx.fillStyle='rgba(255,255,255,0.25)';
-  ctx.font='9px system-ui';
-  ctx.fillText('CHUTE',PADDING,y+14);
-  ctx.fillText('PRODUCT',PADDING+80,y+14);
-  ctx.fillText('BAGS',PADDING+280,y+14);
-  ctx.fillText('KG',PADDING+340,y+14);
-  ctx.fillText('SHARE',PADDING+420,y+14);
-  y+=20;
+  // ── Mode bar ──
+  ctx.fillStyle='rgba(255,255,255,0.04)';
+  ctx.fillRect(0,y,W,MODE_H);
+  ctx.fillStyle='rgba(255,255,255,0.15)';
+  ctx.fillRect(0,y,W,1);
+  var modeLabel=mode==='stock'?'📦  CURRENT STOCK ON HAND':'📈  TOTAL HISTORIC PRODUCTION';
+  ctx.fillStyle=mode==='stock'?'#10b981':'#3b82f6';
+  ctx.font='bold 11px system-ui,sans-serif';
+  ctx.fillText(modeLabel,PAD,y+27);
+  // Total kg right aligned
+  ctx.textAlign='right';
+  ctx.fillStyle='#ffffff';
+  ctx.font='bold 18px system-ui,sans-serif';
+  ctx.fillText(data.totalKg.toLocaleString()+' kg',W-PAD,y+28);
+  ctx.fillStyle='rgba(255,255,255,0.35)';
+  ctx.font='11px system-ui,sans-serif';
+  ctx.fillText(data.bags+' bags',W-PAD,y+16);
+  ctx.textAlign='left';
+  y+=MODE_H+10;
 
-  data.chuteData.forEach(function(row,i){
-    var rowBg=i%2===0?'rgba(255,255,255,0.02)':'transparent';
-    ctx.fillStyle=rowBg;
-    ctx.fillRect(0,y,W,ROW);
-    // chute num
-    ctx.fillStyle='#f0a500';
-    ctx.font='bold 13px system-ui';
-    ctx.fillText(row.chute,PADDING,y+22);
-    // product
-    ctx.fillStyle='rgba(255,255,255,0.7)';
-    ctx.font='12px system-ui';
-    ctx.fillText(row.product,PADDING+80,y+22);
-    // bags
-    ctx.fillStyle='rgba(255,255,255,0.5)';
-    ctx.font='12px system-ui';
-    ctx.fillText(row.bags.toString(),PADDING+280,y+22);
-    // kg
-    ctx.fillStyle='#ffffff';
-    ctx.font='bold 13px system-ui';
-    ctx.fillText(row.kg.toLocaleString(),PADDING+340,y+22);
-    // bar
-    var pct=data.totalKg>0?row.kg/data.totalKg:0;
-    var barW=100,barH=6,barX=PADDING+420,barY=y+15;
-    ctx.fillStyle='rgba(255,255,255,0.08)';
-    roundRect(ctx,barX,barY,barW,barH,3,'rgba(255,255,255,0.08)',1);
-    ctx.fillStyle='#f0a500';
-    roundRect(ctx,barX,barY,Math.max(4,barW*pct),barH,3,'#f0a500',1);
-    ctx.fillStyle='rgba(255,255,255,0.4)';
-    ctx.font='9px system-ui';
-    ctx.fillText(Math.round(pct*100)+'%',barX+barW+6,barY+6);
-    y+=ROW;
-  });
-
-  y+=10;
-
-  // ── Section: Product Mix ──
-  ctx.fillStyle='rgba(255,255,255,0.08)';
-  ctx.fillRect(0,y,W,30);
-  ctx.fillStyle='rgba(255,255,255,0.5)';
-  ctx.font='bold 10px system-ui';
-  ctx.fillText('PRODUCT MIX & CONVERSION',PADDING,y+19);
-  y+=38;
+  // ── Products (main focus) ──
+  ctx.fillStyle='rgba(255,255,255,0.3)';
+  ctx.font='bold 10px system-ui,sans-serif';
+  ctx.letterSpacing='1px';
+  ctx.fillText('PRODUCT BREAKDOWN',PAD,y);
+  ctx.letterSpacing='0px';
+  y+=18;
 
   data.prodData.forEach(function(prod,i){
     var col=COLORS[i%COLORS.length];
-    // Colour dot
+    var barMaxW=INNER;
+    var barFill=data.totalKg>0?Math.max(8,barMaxW*(prod.kg/data.totalKg)):8;
+
+    // Bar background
+    srRoundRect(ctx,PAD,y,barMaxW,52,8,'rgba(255,255,255,0.04)');
+    // Bar fill
+    srRoundRect(ctx,PAD,y,barFill,52,8,col+'22');
+    // Left colour accent
     ctx.fillStyle=col;
-    ctx.beginPath();ctx.arc(PADDING+6,y+10,6,0,Math.PI*2);ctx.fill();
-    // Name
+    ctx.fillRect(PAD,y,4,52);
+
+    // Product name
     ctx.fillStyle='#ffffff';
-    ctx.font='bold 13px system-ui';
-    ctx.fillText(prod.name,PADDING+18,y+15);
-    // pct big
-    ctx.fillStyle=col;
-    ctx.font='bold 22px system-ui';
+    ctx.font='bold 15px system-ui,sans-serif';
+    ctx.fillText(prod.name,PAD+16,y+22);
+
+    // kg
+    ctx.fillStyle='rgba(255,255,255,0.55)';
+    ctx.font='12px system-ui,sans-serif';
+    ctx.fillText(prod.kg.toLocaleString()+' kg  ·  '+prod.bags+' bags',PAD+16,y+40);
+
+    // % right side — big
     ctx.textAlign='right';
-    ctx.fillText(prod.pct+'%',W-PADDING,y+18);
-    ctx.textAlign='left';
-    // kg + bags sub
-    ctx.fillStyle='rgba(255,255,255,0.45)';
-    ctx.font='11px system-ui';
-    ctx.fillText(prod.kg.toLocaleString()+' kg  ·  '+prod.bags+' bags',PADDING+18,y+30);
-    // progress bar
-    var barY=y+38,barW=W-PADDING*2,barH=7;
-    ctx.fillStyle='rgba(255,255,255,0.06)';
-    roundRect(ctx,PADDING,barY,barW,barH,4,'rgba(255,255,255,0.06)',1);
     ctx.fillStyle=col;
-    roundRect(ctx,PADDING,barY,Math.max(6,barW*(prod.pct/100)),barH,4,col,1);
-    y+=56;
+    ctx.font='bold 28px system-ui,sans-serif';
+    ctx.fillText(prod.pct+'%',W-PAD-8,y+36);
+    ctx.textAlign='left';
+
+    y+=64;
   });
 
-  // Footer
-  y+=10;
-  ctx.fillStyle='rgba(255,255,255,0.06)';
-  ctx.fillRect(0,y,W,1);
+  if(data.prodData.length===0){
+    ctx.fillStyle='rgba(255,255,255,0.3)';
+    ctx.font='14px system-ui,sans-serif';
+    ctx.fillText('No stock data for this period.',PAD,y+20);
+    y+=40;
+  }
+
+  y+=4;
+
+  // ── Divider ──
+  ctx.fillStyle='rgba(255,255,255,0.08)';
+  ctx.fillRect(PAD,y,INNER,1);
+  y+=DIV_H;
+
+  // ── Chute summary (secondary info) ──
   ctx.fillStyle='rgba(255,255,255,0.3)';
-  ctx.font='10px system-ui';
-  ctx.fillText('GeT Energy (Pty) Ltd  ·  Erf 60, 1 John van Niekerk Rd, Atlantis Industrial',PADDING,y+18);
+  ctx.font='bold 10px system-ui,sans-serif';
+  ctx.letterSpacing='1px';
+  ctx.fillText('BY CHUTE',PAD,y);
+  ctx.letterSpacing='0px';
+  y+=14;
+
+  data.chuteData.forEach(function(row,i){
+    var pct=data.totalKg>0?(row.kg/data.totalKg*100).toFixed(1):0;
+    var rowY=y+i*42;
+    // Alt row bg
+    if(i%2===0){ctx.fillStyle='rgba(255,255,255,0.02)';ctx.fillRect(0,rowY,W,42);}
+    ctx.fillStyle='#f0a500';
+    ctx.font='bold 13px system-ui,sans-serif';
+    ctx.fillText('C'+row.chute,PAD,rowY+26);
+    ctx.fillStyle='rgba(255,255,255,0.45)';
+    ctx.font='11px system-ui,sans-serif';
+    ctx.fillText(row.prod,PAD+46,rowY+26);
+    ctx.textAlign='right';
+    ctx.fillStyle='#ffffff';
+    ctx.font='bold 13px system-ui,sans-serif';
+    ctx.fillText(row.kg.toLocaleString()+' kg',W-PAD-60,rowY+26);
+    ctx.fillStyle='rgba(255,255,255,0.35)';
+    ctx.font='11px system-ui,sans-serif';
+    ctx.fillText(pct+'%',W-PAD,rowY+26);
+    ctx.textAlign='left';
+    // thin divider
+    ctx.fillStyle='rgba(255,255,255,0.05)';
+    ctx.fillRect(PAD,rowY+42,INNER,1);
+  });
+
+  y+=data.chuteData.length*42+10;
+
+  // ── Footer ──
+  ctx.fillStyle='rgba(255,255,255,0.07)';
+  ctx.fillRect(0,H-FOOTER_H,W,1);
+  ctx.fillStyle='rgba(255,255,255,0.25)';
+  ctx.font='10px system-ui,sans-serif';
+  ctx.fillText('GeT Energy (Pty) Ltd  ·  Erf 60, 1 John van Niekerk Rd, Atlantis Industrial, Cape Town',PAD,H-FOOTER_H+20);
   ctx.textAlign='right';
-  ctx.fillText('Generated by GeT Ball Mill App',W-PADDING,y+18);
+  ctx.fillStyle='rgba(255,255,255,0.18)';
+  ctx.fillText('Generated by GeT Ball Mill App',W-PAD,H-FOOTER_H+20);
   ctx.textAlign='left';
+  // Bottom accent
+  ctx.fillStyle='#f0a500';
+  ctx.fillRect(0,H-2,W,2);
 }
 
-function roundRect(ctx,x,y,w,h,r,color,alpha){
-  ctx.globalAlpha=alpha||1;
+function srRoundRect(ctx,x,y,w,h,r,color){
   ctx.fillStyle=color;
   ctx.beginPath();
   ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);
@@ -2578,63 +2574,63 @@ function roundRect(ctx,x,y,w,h,r,color,alpha){
   ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);
   ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);
   ctx.closePath();ctx.fill();
-  ctx.globalAlpha=1;
+}
+function srRoundRectStroke(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();ctx.stroke();
 }
 
 function shareStockImage(){
-  var canvas=window._rptCanvas;
-  if(!canvas){alert('No report generated yet.');return;}
+  var canvas=window._srCanvas;
+  if(!canvas){alert('No report generated.');return;}
   canvas.toBlob(function(blob){
-    var feedName=(window._rptFeedName||'stock').replace(/\s+/g,'-').toLowerCase();
-    var mode=window._rptMode||'stock';
-    var fname='get-ballmill-'+feedName+'-'+mode+'-'+new Date().toLocaleDateString('en-CA')+'.png';
+    var name='get-stock-'+(window._srFeedName||'report').replace(/\s+/g,'-').toLowerCase()+'-'+new Date().toLocaleDateString('en-CA')+'.png';
     if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],'x.png',{type:'image/png'})]})){
-      navigator.share({files:[new File([blob],fname,{type:'image/png'})],title:'GeT Ball Mill Stock Report'});
+      navigator.share({files:[new File([blob],name,{type:'image/png'})],title:'GeT Ball Mill Stock Report'});
     } else {
       var url=URL.createObjectURL(blob);
-      var a=document.createElement('a');a.href=url;a.download=fname;a.click();
+      var a=document.createElement('a');a.href=url;a.download=name;a.click();
       setTimeout(function(){URL.revokeObjectURL(url);},2000);
     }
   },'image/png');
 }
 
 function copyStockText(){
-  var feedId=window._rptFeedId;
-  var feedName=window._rptFeedName||'';
-  var mode=window._rptMode||'stock';
-  var data=getStockReportData(feedId,mode);
+  var data=getStockReportData(window._srFeedId,window._srMode);
   var now=new Date();
+  var mode=window._srMode;
   var lines=[
-    '*GeT Energy Ball Mill*',
-    '*Stock Report — '+feedName+'*',
-    (mode==='stock'?'📦 Current Stock':'📈 Total Historic')+' · '+now.toLocaleDateString('en-ZA')+' '+now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}),
+    '*GeT Energy · Ball Mill*',
+    '*'+( window._srFeedName||'')+'  —  '+(mode==='stock'?'Current Stock':'Total Historic')+'*',
+    '_'+now.toLocaleDateString('en-ZA',{weekday:'short',day:'numeric',month:'short',year:'numeric'})+' · '+now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'})+'_',
     '',
-    '*CHUTE BREAKDOWN*',
+    '*Products:*',
   ];
-  data.chuteData.forEach(function(r){
-    var pct=data.totalKg>0?Math.round(r.kg/data.totalKg*100):0;
-    lines.push('Chute '+r.chute+' ('+r.product+'): '+r.kg.toLocaleString()+' kg · '+r.bags+' bags · '+pct+'%');
-  });
-  lines.push('');
-  lines.push('*PRODUCT MIX*');
   data.prodData.forEach(function(p){
-    lines.push(p.name+': '+p.pct+'% — '+p.kg.toLocaleString()+' kg ('+p.bags+' bags)');
+    lines.push(p.name+':  *'+p.pct+'%*  ('+p.kg.toLocaleString()+' kg · '+p.bags+' bags)');
   });
   lines.push('');
-  lines.push('*TOTALS*');
-  lines.push('Total '+(mode==='stock'?'In Stock':'Produced')+': '+data.totalKg.toLocaleString()+' kg ('+data.totalBags+' bags)');
-  if(mode==='hist') lines.push('Sold: '+data.soldKg.toLocaleString()+' kg');
+  lines.push('*Total:  '+data.totalKg.toLocaleString()+' kg  ·  '+data.bags+' bags*');
+  lines.push('');
+  lines.push('*By Chute:*');
+  data.chuteData.forEach(function(r){
+    var pct=data.totalKg>0?+(r.kg/data.totalKg*100).toFixed(1):0;
+    lines.push('C'+r.chute+' ('+r.prod+'):  '+r.kg.toLocaleString()+' kg  ·  '+pct+'%');
+  });
   lines.push('');
   lines.push('_GeT Energy (Pty) Ltd · Atlantis Industrial_');
   var txt=lines.join('\n');
   if(navigator.clipboard){
-    navigator.clipboard.writeText(txt).then(function(){alert('✅ Copied! Paste into WhatsApp.');});
+    navigator.clipboard.writeText(txt).then(function(){alert('Copied — paste into WhatsApp.');});
   } else {
     var ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
-    alert('✅ Copied! Paste into WhatsApp.');
+    alert('Copied — paste into WhatsApp.');
   }
 }
-
 </script>
 </body>
 </html>

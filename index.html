@@ -387,6 +387,61 @@ tr:last-child td{border-bottom:none;}
 </div>
 </div>
 
+
+<!-- STATISTICS -->
+<div class="screen" id="screen-stats">
+<div class="screen-content">
+  <div class="screen-title">📈 Statistics</div>
+  <div class="screen-sub">Production analytics & operator performance</div>
+
+  <!-- Date range presets -->
+  <div class="chip-row" id="stats-preset-chips">
+    <div class="chip active" data-preset="today">Today</div>
+    <div class="chip" data-preset="week">This Week</div>
+    <div class="chip" data-preset="month">This Month</div>
+    <div class="chip" data-preset="custom">Custom</div>
+  </div>
+  <div id="stats-custom-range" style="display:none;gap:8px;margin-bottom:12px;display:none;">
+    <div style="display:flex;gap:8px;">
+      <div class="fu-row" style="flex:1;margin:0;"><label>From</label><input type="date" class="fu-input" id="stats-from"></div>
+      <div class="fu-row" style="flex:1;margin:0;"><label>To</label><input type="date" class="fu-input" id="stats-to"></div>
+    </div>
+    <button class="btn btn-gold" style="margin-top:8px;" id="stats-apply-btn">Apply</button>
+  </div>
+
+  <!-- Feed material filter -->
+  <div class="chip-row" id="stats-feed-chips"></div>
+
+  <!-- KPI tiles -->
+  <div class="stock-grid" id="stats-kpi-grid" style="grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;"></div>
+
+  <!-- Product mix donut -->
+  <div class="card" id="stats-product-card">
+    <div class="card-title">Product Mix</div>
+    <div id="stats-product-chart"></div>
+  </div>
+
+  <!-- Daily output bar chart -->
+  <div class="card" id="stats-trend-card">
+    <div class="card-title">Daily Output (kg)</div>
+    <div id="stats-trend-chart"></div>
+  </div>
+
+  <!-- Chute breakdown -->
+  <div class="card" id="stats-chute-card">
+    <div class="card-title">Output by Chute</div>
+    <div id="stats-chute-chart"></div>
+  </div>
+
+  <!-- Operator league table -->
+  <div class="card" id="stats-ops-card">
+    <div class="card-title">Operator League Table</div>
+    <div id="stats-ops-table"></div>
+  </div>
+
+</div>
+</div>
+
 </div><!-- /screen-container -->
 
 <!-- BOTTOM NAV -->
@@ -418,6 +473,10 @@ tr:last-child td{border-bottom:none;}
   <button class="nav-btn" id="nav-edit" onclick="showScreen('screen-edit')">
     <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
     <span>Edit</span>
+  </button>
+  <button class="nav-btn" id="nav-stats" onclick="showScreen('screen-stats');renderStats()">
+    <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+    <span>Stats</span>
   </button>
 </div>
 
@@ -1608,13 +1667,14 @@ function showScreen(id){
   document.querySelectorAll('.screen').forEach(function(s){s.classList.remove('active');});
   document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});
   document.getElementById(id).classList.add('active');
-  const navMap={'screen-home':'nav-home','screen-production':'nav-production','screen-stock':'nav-stock','screen-sales':'nav-sales','screen-admin':'nav-admin','screen-edit':'nav-edit','screen-reports':'nav-edit','screen-manual':'nav-manual'};
+  const navMap={'screen-home':'nav-home','screen-production':'nav-production','screen-stock':'nav-stock','screen-sales':'nav-sales','screen-admin':'nav-admin','screen-edit':'nav-edit','screen-reports':'nav-edit','screen-manual':'nav-manual','screen-stats':'nav-stats'};
   const navId=navMap[id];if(navId){const nb=document.getElementById(navId);if(nb)nb.classList.add('active');}
   if(id==='screen-production') renderProdBagList();
   if(id==='screen-stock') renderStock();
   if(id==='screen-sales') renderSalesList();
   if(id==='screen-edit'){const d=new Date().toLocaleDateString('en-CA');document.getElementById('edit-date-filter').value=d;loadEditList();}
   if(id==='screen-manual'){initManualScreen();}
+  if(id==='screen-stats'){renderStats();}
 }
 
 // ════════════ SERVER SETTINGS ════════════
@@ -2278,6 +2338,309 @@ function manClearAll(){
   document.getElementById('man-summary').style.display = 'none';
   document.querySelectorAll('#man-crew-grid .op-btn').forEach(function(b){ b.classList.remove('active'); });
   manAddBagRow();
+}
+
+
+// ════════════ STATISTICS ════════════
+var _statsPreset = 'today';
+var _statsFromDate = '';
+var _statsToDate = '';
+var _statsFeedId = 'all';
+
+function statsGetDateRange(){
+  var today = new Date();
+  var fmt = function(d){ return d.toLocaleDateString('en-CA'); };
+  if(_statsPreset === 'today'){ return {from: fmt(today), to: fmt(today)}; }
+  if(_statsPreset === 'week'){
+    var mon = new Date(today);
+    mon.setDate(today.getDate() - today.getDay() + (today.getDay()===0?-6:1));
+    return {from: fmt(mon), to: fmt(today)};
+  }
+  if(_statsPreset === 'month'){
+    var m = new Date(today.getFullYear(), today.getMonth(), 1);
+    return {from: fmt(m), to: fmt(today)};
+  }
+  if(_statsPreset === 'custom'){ return {from: _statsFromDate, to: _statsToDate}; }
+  return {from: fmt(today), to: fmt(today)};
+}
+
+function statsGetBags(){
+  var db = getDB();
+  var range = statsGetDateRange();
+  return db.bags.filter(function(b){
+    if(b.qc !== 'pass') return false;
+    var d = b.date || (b.timestamp ? b.timestamp.substring(0,10) : '');
+    if(!d) return false;
+    if(d < range.from || d > range.to) return false;
+    if(_statsFeedId !== 'all' && b.feedId !== _statsFeedId) return false;
+    return true;
+  });
+}
+
+function renderStats(){
+  // Build feed filter chips
+  var feedEl = document.getElementById('stats-feed-chips');
+  feedEl.innerHTML = '';
+  var feeds = getFeedMaterials();
+  var allChip = document.createElement('div');
+  allChip.className = 'chip' + (_statsFeedId==='all'?' active':'');
+  allChip.textContent = 'All Feeds';
+  allChip.addEventListener('click', function(){ _statsFeedId='all'; renderStats(); });
+  feedEl.appendChild(allChip);
+  feeds.forEach(function(f){
+    var c = document.createElement('div');
+    c.className = 'chip' + (_statsFeedId===f.id?' active':'');
+    c.textContent = f.name;
+    c.addEventListener('click', function(){ _statsFeedId=f.id; renderStats(); });
+    feedEl.appendChild(c);
+  });
+
+  // Preset chip listeners
+  document.querySelectorAll('#stats-preset-chips .chip').forEach(function(chip){
+    chip.className = 'chip' + (chip.dataset.preset===_statsPreset?' active':'');
+    chip.onclick = function(){
+      _statsPreset = this.dataset.preset;
+      var customDiv = document.getElementById('stats-custom-range');
+      customDiv.style.display = _statsPreset==='custom'?'block':'none';
+      if(_statsPreset !== 'custom') renderStats();
+    };
+  });
+
+  // Custom range apply
+  var applyBtn = document.getElementById('stats-apply-btn');
+  if(applyBtn){
+    applyBtn.onclick = function(){
+      _statsFromDate = document.getElementById('stats-from').value;
+      _statsToDate = document.getElementById('stats-to').value;
+      if(!_statsFromDate || !_statsToDate){ alert('Please select both dates.'); return; }
+      renderStats();
+    };
+  }
+
+  var bags = statsGetBags();
+  var range = statsGetDateRange();
+
+  // ── KPI tiles ──
+  var totalKg = bags.reduce(function(s,b){ return s + (b.weight||0); }, 0);
+  var totalBags = bags.length;
+  var rejectBags = getDB().bags.filter(function(b){
+    var d = b.date || (b.timestamp ? b.timestamp.substring(0,10) : '');
+    if(d < range.from || d > range.to) return false;
+    if(_statsFeedId !== 'all' && b.feedId !== _statsFeedId) return false;
+    return b.qc === 'reject';
+  }).length;
+  var rejectPct = (totalBags+rejectBags)>0 ? Math.round(rejectBags/(totalBags+rejectBags)*100) : 0;
+
+  // Unique days with production
+  var days = {};
+  bags.forEach(function(b){ days[b.date||(b.timestamp||'').substring(0,10)] = true; });
+  var dayCount = Object.keys(days).length || 1;
+  var avgKgPerDay = Math.round(totalKg / dayCount);
+
+  var kpiEl = document.getElementById('stats-kpi-grid');
+  kpiEl.innerHTML = '';
+  function kpiTile(icon, label, val, sub, color){
+    var t = document.createElement('div');
+    t.className = 'stock-tile';
+    t.innerHTML = '<div class="stock-tile-label">'+icon+' '+label+'</div>'
+      +'<div class="stock-tile-val" style="color:'+(color||'var(--gold)')+';">'+val+'</div>'
+      +(sub?'<div class="stock-tile-unit">'+sub+'</div>':'');
+    kpiEl.appendChild(t);
+  }
+  kpiTile('⚖️','Total Output', totalKg.toLocaleString()+' kg', totalBags+' bags');
+  kpiTile('📅','Avg / Day', avgKgPerDay.toLocaleString()+' kg', dayCount+' day'+(dayCount!==1?'s':''));
+  kpiTile('🏆','Best Day', function(){
+    var byDay={};
+    bags.forEach(function(b){ var d=b.date||(b.timestamp||'').substring(0,10); byDay[d]=(byDay[d]||0)+(b.weight||0); });
+    var best=Object.values(byDay).reduce(function(m,v){return v>m?v:m;},0);
+    return best>0?best.toLocaleString()+' kg':'—';
+  }(), 'single day', 'var(--green)');
+  kpiTile('❌','Reject Rate', rejectPct+'%', rejectBags+' bags rejected', rejectPct>10?'var(--red)':'var(--muted)');
+
+  // ── Product mix ──
+  var prodMap = {};
+  bags.forEach(function(b){
+    var k = b.productName||'Unknown';
+    prodMap[k] = (prodMap[k]||0) + (b.weight||0);
+  });
+  var prodEl = document.getElementById('stats-product-chart');
+  prodEl.innerHTML = '';
+  var prodEntries = Object.entries(prodMap).sort(function(a,b){return b[1]-a[1];});
+  var PROD_COLORS = ['#f0a500','#10b981','#3b82f6','#e91e8c','#f97316','#8ab4d4','#a78bfa','#f59e0b'];
+  if(prodEntries.length === 0){
+    prodEl.innerHTML = '<div class="empty" style="padding:20px;">No data for this period</div>';
+  } else {
+    // Horizontal bar chart
+    prodEntries.forEach(function(entry, i){
+      var name = entry[0], kg = entry[1];
+      var pct = totalKg > 0 ? (kg/totalKg*100) : 0;
+      var row = document.createElement('div');
+      row.style.cssText = 'margin-bottom:10px;';
+      var lbl = document.createElement('div');
+      lbl.style.cssText = 'display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;';
+      lbl.innerHTML = '<span style="font-weight:600;color:var(--white);">'+name+'</span>'
+        +'<span style="color:var(--muted);">'+kg.toLocaleString()+' kg &nbsp;<strong style="color:'+PROD_COLORS[i%PROD_COLORS.length]+';">'+pct.toFixed(1)+'%</strong></span>';
+      var track = document.createElement('div');
+      track.style.cssText = 'background:var(--surface2);border-radius:4px;height:10px;overflow:hidden;';
+      var fill = document.createElement('div');
+      fill.style.cssText = 'height:100%;border-radius:4px;background:'+PROD_COLORS[i%PROD_COLORS.length]+';width:'+pct.toFixed(1)+'%;transition:width .4s;';
+      track.appendChild(fill);
+      row.appendChild(lbl);
+      row.appendChild(track);
+      prodEl.appendChild(row);
+    });
+  }
+
+  // ── Daily trend bar chart ──
+  var byDay = {};
+  bags.forEach(function(b){
+    var d = b.date||(b.timestamp||'').substring(0,10);
+    byDay[d] = (byDay[d]||0) + (b.weight||0);
+  });
+  var trendEl = document.getElementById('stats-trend-chart');
+  trendEl.innerHTML = '';
+  var dayEntries = Object.entries(byDay).sort(function(a,b){return a[0]<b[0]?-1:1;});
+  if(dayEntries.length === 0){
+    trendEl.innerHTML = '<div class="empty" style="padding:20px;">No data for this period</div>';
+  } else {
+    var maxKg = Math.max.apply(null, dayEntries.map(function(e){return e[1];}));
+    var chartH = 100;
+    var barW = Math.min(36, Math.floor((window.innerWidth - 60) / dayEntries.length));
+    var svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    var svgW = Math.max(dayEntries.length * (barW+6), window.innerWidth - 60);
+    svg.setAttribute('viewBox','0 0 '+svgW+' '+(chartH+40));
+    svg.setAttribute('width','100%');
+    svg.setAttribute('height', chartH+40);
+    svg.style.display = 'block';
+    dayEntries.forEach(function(entry, i){
+      var d = entry[0], kg = entry[1];
+      var barH = maxKg > 0 ? Math.max(4, Math.round(kg/maxKg*chartH)) : 4;
+      var x = i*(barW+6);
+      var rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      rect.setAttribute('x', x);
+      rect.setAttribute('y', chartH - barH);
+      rect.setAttribute('width', barW);
+      rect.setAttribute('height', barH);
+      rect.setAttribute('rx','3');
+      rect.setAttribute('fill','var(--gold)');
+      rect.setAttribute('opacity','0.85');
+      svg.appendChild(rect);
+      // kg label on top
+      var txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+      txt.setAttribute('x', x + barW/2);
+      txt.setAttribute('y', chartH - barH - 4);
+      txt.setAttribute('text-anchor','middle');
+      txt.setAttribute('font-size','8');
+      txt.setAttribute('fill','var(--muted)');
+      txt.textContent = kg >= 1000 ? (kg/1000).toFixed(1)+'t' : kg+'kg';
+      svg.appendChild(txt);
+      // date label below
+      var lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+      lbl.setAttribute('x', x + barW/2);
+      lbl.setAttribute('y', chartH + 14);
+      lbl.setAttribute('text-anchor','middle');
+      lbl.setAttribute('font-size','8');
+      lbl.setAttribute('fill','var(--muted)');
+      var parts = d.split('-');
+      lbl.textContent = parts[2]+'/'+parts[1];
+      svg.appendChild(lbl);
+    });
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'overflow-x:auto;padding-bottom:4px;';
+    wrap.appendChild(svg);
+    trendEl.appendChild(wrap);
+  }
+
+  // ── Chute breakdown ──
+  var chuteMap2 = {};
+  bags.forEach(function(b){
+    var k = 'Chute '+(b.chute||'?');
+    if(!chuteMap2[k]) chuteMap2[k] = {kg:0, bags:0, prod:b.productName||'—'};
+    chuteMap2[k].kg += (b.weight||0);
+    chuteMap2[k].bags++;
+  });
+  var chuteEl = document.getElementById('stats-chute-chart');
+  chuteEl.innerHTML = '';
+  var chuteEntries = Object.entries(chuteMap2).sort(function(a,b){return b[1].kg-a[1].kg;});
+  if(chuteEntries.length === 0){
+    chuteEl.innerHTML = '<div class="empty" style="padding:20px;">No data</div>';
+  } else {
+    var tbl = document.createElement('div');
+    tbl.className = 'tbl-wrap';
+    var table = document.createElement('table');
+    table.innerHTML = '<thead><tr><th>Chute</th><th>Product</th><th>Bags</th><th>kg</th><th>Share</th></tr></thead>';
+    var tbody = document.createElement('tbody');
+    chuteEntries.forEach(function(entry){
+      var chute=entry[0], info=entry[1];
+      var pct = totalKg>0?((info.kg/totalKg)*100).toFixed(1):'0';
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td style="font-weight:700;">'+chute+'</td>'
+        +'<td style="color:var(--muted);font-size:11px;">'+info.prod+'</td>'
+        +'<td>'+info.bags+'</td>'
+        +'<td style="font-weight:700;color:var(--gold);">'+info.kg.toLocaleString()+'</td>'
+        +'<td><div style="display:flex;align-items:center;gap:6px;">'
+        +'<div style="background:var(--surface2);border-radius:3px;height:6px;width:50px;overflow:hidden;">'
+        +'<div style="height:100%;background:var(--steel);border-radius:3px;width:'+pct+'%;"></div></div>'
+        +'<span style="font-size:11px;color:var(--muted);">'+pct+'%</span></div></td>';
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    tbl.appendChild(table);
+    chuteEl.appendChild(tbl);
+  }
+
+  // ── Operator league table ──
+  var opMap = {};
+  bags.forEach(function(b){
+    var op = b.operator || 'Unknown';
+    if(!opMap[op]) opMap[op] = {kg:0, bags:0, dayKg:0, dayBags:0, nightKg:0, nightBags:0, dates:{}};
+    opMap[op].kg += (b.weight||0);
+    opMap[op].bags++;
+    // Determine shift from timestamp hour
+    var hour = b.timestamp ? new Date(b.timestamp).getHours() : 8;
+    var isDayShift = hour >= 7 && hour < 19;
+    if(isDayShift){ opMap[op].dayKg += (b.weight||0); opMap[op].dayBags++; }
+    else { opMap[op].nightKg += (b.weight||0); opMap[op].nightBags++; }
+    var d = b.date||(b.timestamp||'').substring(0,10);
+    if(d) opMap[op].dates[d]=true;
+  });
+  var opEntries = Object.entries(opMap).sort(function(a,b){return b[1].kg-a[1].kg;});
+  var opsEl = document.getElementById('stats-ops-table');
+  opsEl.innerHTML = '';
+  if(opEntries.length === 0){
+    opsEl.innerHTML = '<div class="empty" style="padding:20px;">No data</div>';
+  } else {
+    var opTbl = document.createElement('div');
+    opTbl.className = 'tbl-wrap';
+    var opTable = document.createElement('table');
+    opTable.innerHTML = '<thead><tr><th>#</th><th>Operator</th><th>Total kg</th><th>Bags</th><th>Day kg</th><th>Night kg</th><th>Shifts</th></tr></thead>';
+    var opTbody = document.createElement('tbody');
+    opEntries.forEach(function(entry, i){
+      var op=entry[0], d=entry[1];
+      var medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1);
+      var tr = document.createElement('tr');
+      tr.style.cssText = i===0?'background:rgba(240,165,0,0.07);':'';
+      tr.innerHTML = '<td style="font-size:14px;">'+medal+'</td>'
+        +'<td style="font-weight:700;">'+op+'</td>'
+        +'<td style="font-weight:800;color:var(--gold);">'+d.kg.toLocaleString()+'</td>'
+        +'<td style="color:var(--muted);">'+d.bags+'</td>'
+        +'<td style="color:var(--steel);font-size:11px;">'+d.dayKg.toLocaleString()+'<br><span style="color:var(--muted);font-size:10px;">'+d.dayBags+' bags</span></td>'
+        +'<td style="color:#a78bfa;font-size:11px;">'+d.nightKg.toLocaleString()+'<br><span style="color:var(--muted);font-size:10px;">'+d.nightBags+' bags</span></td>'
+        +'<td style="color:var(--muted);">'+Object.keys(d.dates).length+'</td>';
+      opTbody.appendChild(tr);
+    });
+    opTable.appendChild(opTbody);
+    opTbl.appendChild(opTable);
+    opsEl.appendChild(opTbl);
+    // Best performer callout
+    if(opEntries.length > 0){
+      var best = opEntries[0];
+      var callout = document.createElement('div');
+      callout.style.cssText = 'margin-top:10px;padding:10px 12px;background:rgba(240,165,0,0.08);border:1px solid rgba(240,165,0,0.2);border-radius:var(--radius-sm);font-size:12px;';
+      callout.innerHTML = '🏆 <strong>'+best[0]+'</strong> leads with <strong>'+best[1].kg.toLocaleString()+' kg</strong> ('+best[1].bags+' bags) in this period.';
+      opsEl.appendChild(callout);
+    }
+  }
 }
 
 </script>

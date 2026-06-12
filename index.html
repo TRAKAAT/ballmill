@@ -268,8 +268,19 @@ tr:last-child td{border-bottom:none;}
   <div class="screen-title">📦 Stock</div>
   <div class="screen-sub">Current inventory by chute & product</div>
   <div id="stock-feed-filter" class="chip-row"></div>
+  <button class="btn btn-ghost" style="margin-bottom:10px;" id="stock-report-btn">📤 Share Stock Report</button>
   <div id="stock-content"><div class="empty">No stock data yet</div></div>
 </div>
+</div>
+
+<div class="overlay" id="overlay-stock-report">
+  <div class="modal-sheet" style="max-height:95dvh;">
+    <div class="modal-header">
+      <div class="modal-title">Stock Report</div>
+      <button class="modal-close" id="close-stock-report">✕</button>
+    </div>
+    <div id="stock-report-body"></div>
+  </div>
 </div>
 
 <!-- SALES -->
@@ -387,6 +398,34 @@ tr:last-child td{border-bottom:none;}
 </div>
 </div>
 
+
+<!-- STATISTICS -->
+<div class="screen" id="screen-stats">
+<div class="screen-content">
+  <div class="screen-title">📈 Statistics</div>
+  <div class="screen-sub">Production analytics & operator performance</div>
+  <div class="chip-row" id="stats-preset-chips">
+    <div class="chip active" data-preset="today">Today</div>
+    <div class="chip" data-preset="week">This Week</div>
+    <div class="chip" data-preset="month">This Month</div>
+    <div class="chip" data-preset="custom">Custom</div>
+  </div>
+  <div id="stats-custom-range" style="display:none;">
+    <div style="display:flex;gap:8px;">
+      <div class="fu-row" style="flex:1;margin:0;"><label>From</label><input type="date" class="fu-input" id="stats-from"></div>
+      <div class="fu-row" style="flex:1;margin:0;"><label>To</label><input type="date" class="fu-input" id="stats-to"></div>
+    </div>
+    <button class="btn btn-gold" style="margin-top:8px;" id="stats-apply-btn">Apply</button>
+  </div>
+  <div class="chip-row" id="stats-feed-chips"></div>
+  <div class="stock-grid" id="stats-kpi-grid" style="grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;"></div>
+  <div class="card"><div class="card-title">Product Mix</div><div id="stats-product-chart"></div></div>
+  <div class="card"><div class="card-title">Daily Output (kg)</div><div id="stats-trend-chart"></div></div>
+  <div class="card"><div class="card-title">Output by Chute</div><div id="stats-chute-chart"></div></div>
+  <div class="card"><div class="card-title">Operator League Table</div><div id="stats-ops-table"></div></div>
+</div>
+</div>
+
 </div><!-- /screen-container -->
 
 <!-- BOTTOM NAV -->
@@ -418,6 +457,10 @@ tr:last-child td{border-bottom:none;}
   <button class="nav-btn" id="nav-edit" onclick="showScreen('screen-edit')">
     <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
     <span>Edit</span>
+  </button>
+  <button class="nav-btn" id="nav-stats" onclick="showScreen('screen-stats');renderStats()">
+    <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+    <span>Stats</span>
   </button>
 </div>
 
@@ -839,6 +882,8 @@ function renderStock(){
   const contentEl=document.getElementById('stock-content');
   filterEl.innerHTML='';contentEl.innerHTML='';
   if(!fms.length){contentEl.innerHTML='<div class="empty">No feed materials registered yet</div>';return;}
+  var _srBtn=document.getElementById('stock-report-btn');if(_srBtn){_srBtn.onclick=function(){openStockReport();};}
+  var _srClose=document.getElementById('close-stock-report');if(_srClose){_srClose.onclick=function(){document.getElementById('overlay-stock-report').classList.remove('open');};}
   const sortedFms=fms.slice().sort(function(a,b){return a.name.localeCompare(b.name);});
   let activeFeed=window._stockFeed||sortedFms[0].id;
   sortedFms.forEach(function(fm){
@@ -1609,13 +1654,14 @@ function showScreen(id){
   document.querySelectorAll('.screen').forEach(function(s){s.classList.remove('active');});
   document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});
   document.getElementById(id).classList.add('active');
-  const navMap={'screen-home':'nav-home','screen-production':'nav-production','screen-stock':'nav-stock','screen-sales':'nav-sales','screen-admin':'nav-admin','screen-edit':'nav-edit','screen-reports':'nav-edit','screen-manual':'nav-manual'};
+  const navMap={'screen-home':'nav-home','screen-production':'nav-production','screen-stock':'nav-stock','screen-sales':'nav-sales','screen-admin':'nav-admin','screen-edit':'nav-edit','screen-reports':'nav-edit','screen-manual':'nav-manual','screen-stats':'nav-stats'};
   const navId=navMap[id];if(navId){const nb=document.getElementById(navId);if(nb)nb.classList.add('active');}
   if(id==='screen-production') renderProdBagList();
   if(id==='screen-stock') renderStock();
   if(id==='screen-sales') renderSalesList();
   if(id==='screen-edit'){const d=new Date().toLocaleDateString('en-CA');document.getElementById('edit-date-filter').value=d;loadEditList();}
   if(id==='screen-manual'){initManualScreen();}
+  if(id==='screen-stats'){renderStats();}
 }
 
 // ════════════ SERVER SETTINGS ════════════
@@ -2281,6 +2327,192 @@ function manClearAll(){
   manAddBagRow();
 }
 
+
+// ════════════ STOCK REPORT ════════════
+function openStockReport(){
+  var overlay=document.getElementById('overlay-stock-report');
+  var body=document.getElementById('stock-report-body');
+  overlay.classList.add('open');body.innerHTML='';
+  var settings=getSettings(),fms=settings.feedMaterials||[];
+  var activeFeed=window._stockFeed||(fms[0]?fms[0].id:'');
+  var feedObj=fms.find(function(f){return f.id===activeFeed;})||{name:'Unknown'};
+  window._srFeedId=activeFeed;window._srFeedName=feedObj.name;window._srMode='stock';
+  var modeRow=document.createElement('div');modeRow.style.cssText='display:flex;gap:8px;margin-bottom:16px;';
+  var btnStock=document.createElement('button');btnStock.className='chip active';btnStock.textContent='📦 Current Stock';
+  var btnHist=document.createElement('button');btnHist.className='chip';btnHist.textContent='📈 Total Historic';
+  modeRow.appendChild(btnStock);modeRow.appendChild(btnHist);body.appendChild(modeRow);
+  var canvas=document.createElement('canvas');canvas.style.cssText='width:100%;border-radius:12px;display:block;margin-bottom:14px;';
+  body.appendChild(canvas);window._srCanvas=canvas;
+  var shareBtn=document.createElement('button');shareBtn.className='btn btn-gold';shareBtn.textContent='📤 Share Image';shareBtn.addEventListener('click',shareStockImage);body.appendChild(shareBtn);
+  var copyBtn=document.createElement('button');copyBtn.className='btn btn-ghost';copyBtn.textContent='📋 Copy as Text';copyBtn.addEventListener('click',copyStockText);body.appendChild(copyBtn);
+  function setMode(m){window._srMode=m;btnStock.className='chip'+(m==='stock'?' active':'');btnHist.className='chip'+(m==='hist'?' active':'');drawStockReport();}
+  btnStock.addEventListener('click',function(){setMode('stock');});btnHist.addEventListener('click',function(){setMode('hist');});
+  drawStockReport();
+}
+function getStockReportData(feedId,mode){
+  var db=getDB(),settings=getSettings(),chuteMap=settings.chuteMap||{};
+  var chutes=['1','2','3','4','5','6','BH1','BH2'];
+  var allPass=db.bags.filter(function(b){return b.feedId===feedId&&b.qc==='pass';});
+  var soldIds=new Set();(db.sales||[]).forEach(function(s){(s.bagIds||[]).forEach(function(id){soldIds.add(id);});});
+  var bags=mode==='stock'?allPass.filter(function(b){return !soldIds.has(b.id);}):allPass;
+  var totalKg=bags.reduce(function(s,b){return s+(b.weight||0);},0);
+  var prodMap={};
+  bags.forEach(function(b){var k=b.productName||'Unknown';if(!prodMap[k])prodMap[k]={kg:0,bags:0};prodMap[k].kg+=(b.weight||0);prodMap[k].bags++;});
+  var prodData=Object.entries(prodMap).map(function(e){return {name:e[0],kg:e[1].kg,bags:e[1].bags,pct:totalKg>0?Math.round(e[1].kg/totalKg*100):0};}).sort(function(a,b){return b.kg-a.kg;});
+  var chuteData=chutes.map(function(c){var cb=bags.filter(function(b){return b.chute===c;});var kg=cb.reduce(function(s,b){return s+(b.weight||0);},0);var key=feedId+'_'+c;var prod=chuteMap[key]?chuteMap[key].productName:'—';return {chute:c,prod:prod,kg:kg,bags:cb.length};}).filter(function(r){return r.kg>0;});
+  return {totalKg:totalKg,totalBags:bags.length,prodData:prodData,chuteData:chuteData};
+}
+function drawStockReport(){
+  var canvas=window._srCanvas,feedId=window._srFeedId,feedName=window._srFeedName,mode=window._srMode;
+  var data=getStockReportData(feedId,mode);
+  var COLORS=['#f0a500','#10b981','#3b82f6','#e91e8c','#f97316','#a78bfa'];
+  var W=640,PAD=28;
+  var HEAD_H=100,RING_H=Math.max(180,data.prodData.length*58+40),CHUTE_H=data.chuteData.length>0?(data.chuteData.length*38+52):0,FOOT_H=44;
+  var H=HEAD_H+RING_H+CHUTE_H+FOOT_H;
+  canvas.width=W;canvas.height=H;
+  var ctx=canvas.getContext('2d');
+  ctx.fillStyle='#0d1117';ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba(255,255,255,0.02)';for(var gx=0;gx<W;gx+=20){for(var gy=0;gy<H;gy+=20){ctx.fillRect(gx,gy,1,1);}}
+  ctx.fillStyle='#f0a500';ctx.fillRect(0,0,W,4);
+  ctx.fillStyle='rgba(240,165,0,0.06)';ctx.fillRect(0,4,W,HEAD_H-4);
+  ctx.fillStyle='rgba(255,255,255,0.05)';ctx.fillRect(0,HEAD_H-1,W,1);
+  ctx.fillStyle='#f0a500';ctx.font='700 10px system-ui,sans-serif';ctx.fillText('GET ENERGY  ·  BALL MILL',PAD,26);
+  ctx.fillStyle='#ffffff';ctx.font='700 28px system-ui,sans-serif';ctx.fillText(feedName,PAD,62);
+  ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='11px system-ui,sans-serif';
+  var now=new Date();ctx.fillText(now.toLocaleDateString('en-ZA',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+' · '+now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}),PAD,82);
+  var mLabel=mode==='stock'?'CURRENT STOCK':'TOTAL HISTORIC',mColor=mode==='stock'?'#10b981':'#3b82f6';
+  ctx.font='700 9px system-ui,sans-serif';var mW=ctx.measureText(mLabel).width+18;
+  ctx.fillStyle=mColor+'18';srRR(ctx,W-PAD-mW,16,mW,22,4);ctx.strokeStyle=mColor+'55';ctx.lineWidth=1;srRRs(ctx,W-PAD-mW,16,mW,22,4);ctx.fillStyle=mColor;ctx.fillText(mLabel,W-PAD-mW+9,31);
+  var y=HEAD_H;
+  var RING_CX=PAD+80,RING_CY=y+RING_H/2,RING_R=62,RING_LW=16;
+  if(data.prodData.length>0){
+    var GAP=0.04,startAngle=-Math.PI/2;
+    data.prodData.forEach(function(p,i){var slice=(p.kg/data.totalKg)*Math.PI*2-GAP;ctx.beginPath();ctx.arc(RING_CX,RING_CY,RING_R,startAngle,startAngle+slice);ctx.strokeStyle=COLORS[i%COLORS.length];ctx.lineWidth=RING_LW;ctx.lineCap='butt';ctx.stroke();startAngle+=slice+GAP;});
+  } else {ctx.beginPath();ctx.arc(RING_CX,RING_CY,RING_R,0,Math.PI*2);ctx.strokeStyle='rgba(255,255,255,0.08)';ctx.lineWidth=RING_LW;ctx.stroke();}
+  ctx.textAlign='center';ctx.fillStyle='rgba(255,255,255,0.25)';ctx.font='9px system-ui,sans-serif';ctx.fillText('TOTAL',RING_CX,RING_CY-8);
+  ctx.fillStyle='#ffffff';ctx.font='700 16px system-ui,sans-serif';ctx.fillText(data.totalKg.toLocaleString(),RING_CX,RING_CY+10);
+  ctx.fillStyle='rgba(255,255,255,0.25)';ctx.font='10px system-ui,sans-serif';ctx.fillText('kg',RING_CX,RING_CY+26);ctx.textAlign='left';
+  var legX=PAD+162,legY=y+28;
+  data.prodData.forEach(function(p,i){
+    var col=COLORS[i%COLORS.length];
+    ctx.fillStyle=col;ctx.fillRect(legX,legY,4,48);
+    ctx.fillStyle='#ffffff';ctx.font='700 13px system-ui,sans-serif';ctx.fillText(p.name,legX+12,legY+16);
+    ctx.fillStyle=col;ctx.font='700 24px system-ui,sans-serif';ctx.fillText(p.kg.toLocaleString()+' kg',legX+12,legY+40);
+    ctx.textAlign='right';ctx.fillStyle='rgba(255,255,255,0.35)';ctx.font='11px system-ui,sans-serif';ctx.fillText(p.pct+'%  ·  '+p.bags+' bags',W-PAD,legY+40);ctx.textAlign='left';
+    if(i<data.prodData.length-1){ctx.fillStyle='rgba(255,255,255,0.05)';ctx.fillRect(legX+12,legY+52,W-legX-12-PAD,1);}
+    legY+=58;
+  });
+  y+=RING_H;
+  if(data.chuteData.length>0){
+    ctx.fillStyle='rgba(255,255,255,0.05)';ctx.fillRect(0,y,W,1);y+=16;
+    ctx.fillStyle='rgba(255,255,255,0.2)';ctx.font='700 9px system-ui,sans-serif';ctx.fillText('CHUTE BREAKDOWN',PAD,y);y+=14;
+    ctx.fillStyle='rgba(255,255,255,0.18)';ctx.font='700 9px system-ui,sans-serif';ctx.fillText('CHUTE',PAD,y);ctx.fillText('PRODUCT',PAD+60,y);
+    ctx.textAlign='right';ctx.fillText('BAGS',W-PAD-110,y);ctx.fillText('KG',W-PAD-44,y);ctx.fillText('%',W-PAD,y);ctx.textAlign='left';y+=10;
+    data.chuteData.forEach(function(row,i){
+      var rY=y+i*38;if(i%2===0){ctx.fillStyle='rgba(255,255,255,0.02)';ctx.fillRect(0,rY,W,38);}
+      ctx.fillStyle='#f0a500';ctx.font='700 13px system-ui,sans-serif';ctx.fillText(row.chute,PAD,rY+24);
+      ctx.fillStyle='rgba(255,255,255,0.5)';ctx.font='12px system-ui,sans-serif';ctx.fillText(row.prod,PAD+60,rY+24);
+      var pct=data.totalKg>0?Math.round(row.kg/data.totalKg*100):0;
+      ctx.textAlign='right';ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px system-ui,sans-serif';ctx.fillText(row.bags,W-PAD-110,rY+24);
+      ctx.fillStyle='#ffffff';ctx.font='700 13px system-ui,sans-serif';ctx.fillText(row.kg.toLocaleString(),W-PAD-44,rY+24);
+      ctx.fillStyle='rgba(255,255,255,0.28)';ctx.font='11px system-ui,sans-serif';ctx.fillText(pct+'%',W-PAD,rY+24);ctx.textAlign='left';
+      ctx.fillStyle='rgba(255,255,255,0.04)';ctx.fillRect(PAD,rY+38,W-PAD*2,1);
+    });
+  }
+  var fY=H-FOOT_H;ctx.fillStyle='rgba(255,255,255,0.05)';ctx.fillRect(0,fY,W,1);
+  ctx.fillStyle='rgba(255,255,255,0.18)';ctx.font='10px system-ui,sans-serif';ctx.fillText('GeT Energy (Pty) Ltd  ·  Erf 60, 1 John van Niekerk Rd, Atlantis Industrial',PAD,fY+18);
+  ctx.textAlign='right';ctx.fillStyle='rgba(255,255,255,0.12)';ctx.fillText('GeT Ball Mill App',W-PAD,fY+18);ctx.textAlign='left';
+  ctx.fillStyle='#f0a500';ctx.fillRect(0,H-2,W,2);
+}
+function srRR(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();ctx.fill();}
+function srRRs(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();ctx.stroke();}
+function shareStockImage(){
+  var canvas=window._srCanvas;if(!canvas){alert('No report generated.');return;}
+  canvas.toBlob(function(blob){
+    var name='get-stock-'+(window._srFeedName||'report').replace(/\s+/g,'-').toLowerCase()+'-'+new Date().toLocaleDateString('en-CA')+'.png';
+    if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],'x.png',{type:'image/png'})]})){navigator.share({files:[new File([blob],name,{type:'image/png'})],title:'GeT Ball Mill Stock Report'});}
+    else{var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(function(){URL.revokeObjectURL(url);},2000);}
+  },'image/png');
+}
+function copyStockText(){
+  var data=getStockReportData(window._srFeedId,window._srMode);
+  var now=new Date();
+  var lines=['*GeT Energy · Ball Mill*','*'+window._srFeedName+'  —  '+(window._srMode==='stock'?'Current Stock':'Total Historic')+'*','_'+now.toLocaleDateString('en-ZA',{weekday:'short',day:'numeric',month:'short',year:'numeric'})+' · '+now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'})+'_','','*Product Stock:*'];
+  data.prodData.forEach(function(p){lines.push(p.name+': *'+p.kg.toLocaleString()+' kg* ('+p.pct+'% · '+p.bags+' bags)');});
+  if(data.chuteData.length){lines.push('');lines.push('*By Chute:*');data.chuteData.forEach(function(r){var pct=data.totalKg>0?Math.round(r.kg/data.totalKg*100):0;lines.push('C'+r.chute+' ('+r.prod+'): '+r.kg.toLocaleString()+' kg · '+pct+'%');});}
+  lines.push('');lines.push('_GeT Energy (Pty) Ltd · Atlantis Industrial_');
+  var txt=lines.join('\n');
+  if(navigator.clipboard){navigator.clipboard.writeText(txt).then(function(){alert('Copied — paste into WhatsApp.');});}
+  else{var ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);alert('Copied — paste into WhatsApp.');}
+}
+
+// ════════════ STATISTICS ════════════
+var _statsPreset='today',_statsFrom='',_statsTo='',_statsFeedId='all';
+function statsDateRange(){
+  var t=new Date(),fmt=function(d){return d.toLocaleDateString('en-CA');};
+  if(_statsPreset==='today') return {from:fmt(t),to:fmt(t)};
+  if(_statsPreset==='week'){var m=new Date(t);m.setDate(t.getDate()-t.getDay()+(t.getDay()===0?-6:1));return {from:fmt(m),to:fmt(t)};}
+  if(_statsPreset==='month') return {from:fmt(new Date(t.getFullYear(),t.getMonth(),1)),to:fmt(t)};
+  return {from:_statsFrom,to:_statsTo};
+}
+function statsGetBags(){
+  var db=getDB(),r=statsDateRange();
+  return db.bags.filter(function(b){
+    if(b.qc!=='pass') return false;
+    var d=b.date||(b.timestamp?b.timestamp.substring(0,10):'');
+    if(!d||d<r.from||d>r.to) return false;
+    if(_statsFeedId!=='all'&&b.feedId!==_statsFeedId) return false;
+    return true;
+  });
+}
+function renderStats(){
+  var feedEl=document.getElementById('stats-feed-chips');feedEl.innerHTML='';
+  var feeds=getFeedMaterials();
+  var allC=document.createElement('div');allC.className='chip'+(_statsFeedId==='all'?' active':'');allC.textContent='All Feeds';allC.addEventListener('click',function(){_statsFeedId='all';renderStats();});feedEl.appendChild(allC);
+  feeds.slice().sort(function(a,b){return a.name.localeCompare(b.name);}).forEach(function(f){var c=document.createElement('div');c.className='chip'+(_statsFeedId===f.id?' active':'');c.textContent=f.name;c.addEventListener('click',function(){_statsFeedId=f.id;renderStats();});feedEl.appendChild(c);});
+  document.querySelectorAll('#stats-preset-chips .chip').forEach(function(chip){
+    chip.className='chip'+(chip.dataset.preset===_statsPreset?' active':'');
+    chip.onclick=function(){_statsPreset=this.dataset.preset;document.getElementById('stats-custom-range').style.display=_statsPreset==='custom'?'block':'none';if(_statsPreset!=='custom')renderStats();};
+  });
+  var applyBtn=document.getElementById('stats-apply-btn');
+  if(applyBtn){applyBtn.onclick=function(){_statsFrom=document.getElementById('stats-from').value;_statsTo=document.getElementById('stats-to').value;if(!_statsFrom||!_statsTo){alert('Select both dates.');return;}renderStats();};}
+  var bags=statsGetBags(),r=statsDateRange();
+  var totalKg=bags.reduce(function(s,b){return s+(b.weight||0);},0);
+  var db=getDB();
+  var rejectBags=db.bags.filter(function(b){var d=b.date||(b.timestamp?b.timestamp.substring(0,10):'');return d>=r.from&&d<=r.to&&(_statsFeedId==='all'||b.feedId===_statsFeedId)&&b.qc==='reject';}).length;
+  var days={};bags.forEach(function(b){days[b.date||(b.timestamp||'').substring(0,10)]=true;});
+  var dayCount=Object.keys(days).length||1;
+  var kpiEl=document.getElementById('stats-kpi-grid');kpiEl.innerHTML='';
+  function kpiTile(icon,label,val,sub,color){var t=document.createElement('div');t.className='stock-tile';t.innerHTML='<div class="stock-tile-label">'+icon+' '+label+'</div><div class="stock-tile-val" style="color:'+(color||'var(--gold)')+';">'+val+'</div>'+(sub?'<div class="stock-tile-unit">'+sub+'</div>':'');kpiEl.appendChild(t);}
+  kpiTile('⚖️','Total Output',totalKg.toLocaleString()+' kg',bags.length+' bags');
+  kpiTile('📅','Avg / Day',Math.round(totalKg/dayCount).toLocaleString()+' kg',dayCount+' day'+(dayCount!==1?'s':''));
+  var byDay={};bags.forEach(function(b){var d=b.date||(b.timestamp||'').substring(0,10);byDay[d]=(byDay[d]||0)+(b.weight||0);});
+  var best=Object.values(byDay).reduce(function(m,v){return v>m?v:m;},0);
+  kpiTile('🏆','Best Day',best>0?best.toLocaleString()+' kg':'—','single day','var(--green)');
+  var rPct=(bags.length+rejectBags)>0?Math.round(rejectBags/(bags.length+rejectBags)*100):0;
+  kpiTile('❌','Reject Rate',rPct+'%',rejectBags+' bags',rPct>10?'var(--red)':'var(--muted)');
+  var prodMap={};bags.forEach(function(b){var k=b.productName||'Unknown';prodMap[k]=(prodMap[k]||0)+(b.weight||0);});
+  var prodEl=document.getElementById('stats-product-chart');prodEl.innerHTML='';
+  var COLORS=['#f0a500','#10b981','#3b82f6','#e91e8c','#f97316','#8ab4d4'];
+  var prodEntries=Object.entries(prodMap).sort(function(a,b){return b[1]-a[1];});
+  if(!prodEntries.length){prodEl.innerHTML='<div class="empty" style="padding:20px;">No data</div>';}
+  else{prodEntries.forEach(function(e,i){var pct=totalKg>0?(e[1]/totalKg*100):0;var row=document.createElement('div');row.style.cssText='margin-bottom:10px;';var lbl=document.createElement('div');lbl.style.cssText='display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;';lbl.innerHTML='<span style="font-weight:600;">'+e[0]+'</span><span style="color:var(--muted);">'+e[1].toLocaleString()+' kg &nbsp;<strong style="color:'+COLORS[i%COLORS.length]+';">'+pct.toFixed(1)+'%</strong></span>';var tr=document.createElement('div');tr.style.cssText='background:var(--surface2);border-radius:4px;height:10px;overflow:hidden;';var fl=document.createElement('div');fl.style.cssText='height:100%;border-radius:4px;background:'+COLORS[i%COLORS.length]+';width:'+pct.toFixed(1)+'%;';tr.appendChild(fl);row.appendChild(lbl);row.appendChild(tr);prodEl.appendChild(row);});}
+  var trendEl=document.getElementById('stats-trend-chart');trendEl.innerHTML='';
+  var dayEntries=Object.entries(byDay).sort(function(a,b){return a[0]<b[0]?-1:1;});
+  if(!dayEntries.length){trendEl.innerHTML='<div class="empty" style="padding:20px;">No data</div>';}
+  else{var maxKg=Math.max.apply(null,dayEntries.map(function(e){return e[1];}));var barW=Math.min(36,Math.floor((window.innerWidth-80)/dayEntries.length));var svgW=Math.max(dayEntries.length*(barW+6),window.innerWidth-80);var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');var CH=100;svg.setAttribute('viewBox','0 0 '+svgW+' '+(CH+40));svg.setAttribute('width','100%');svg.setAttribute('height',CH+40);svg.style.display='block';dayEntries.forEach(function(e,i){var bH=maxKg>0?Math.max(4,Math.round(e[1]/maxKg*CH)):4;var x=i*(barW+6);var rect=document.createElementNS('http://www.w3.org/2000/svg','rect');rect.setAttribute('x',x);rect.setAttribute('y',CH-bH);rect.setAttribute('width',barW);rect.setAttribute('height',bH);rect.setAttribute('rx','3');rect.setAttribute('fill','var(--gold)');rect.setAttribute('opacity','0.85');svg.appendChild(rect);var txt=document.createElementNS('http://www.w3.org/2000/svg','text');txt.setAttribute('x',x+barW/2);txt.setAttribute('y',CH-bH-4);txt.setAttribute('text-anchor','middle');txt.setAttribute('font-size','8');txt.setAttribute('fill','var(--muted)');txt.textContent=e[1]>=1000?(e[1]/1000).toFixed(1)+'t':e[1]+'kg';svg.appendChild(txt);var lbl=document.createElementNS('http://www.w3.org/2000/svg','text');lbl.setAttribute('x',x+barW/2);lbl.setAttribute('y',CH+14);lbl.setAttribute('text-anchor','middle');lbl.setAttribute('font-size','8');lbl.setAttribute('fill','var(--muted)');var p=e[0].split('-');lbl.textContent=p[2]+'/'+p[1];svg.appendChild(lbl);});var wrap=document.createElement('div');wrap.style.cssText='overflow-x:auto;padding-bottom:4px;';wrap.appendChild(svg);trendEl.appendChild(wrap);}
+  var chuteMap2={};bags.forEach(function(b){var k='C'+(b.chute||'?');if(!chuteMap2[k])chuteMap2[k]={kg:0,bags:0,prod:b.productName||'—'};chuteMap2[k].kg+=(b.weight||0);chuteMap2[k].bags++;});
+  var chuteEl=document.getElementById('stats-chute-chart');chuteEl.innerHTML='';
+  var chuteEntries=Object.entries(chuteMap2).sort(function(a,b){return b[1].kg-a[1].kg;});
+  if(!chuteEntries.length){chuteEl.innerHTML='<div class="empty" style="padding:20px;">No data</div>';}
+  else{var tbl=document.createElement('div');tbl.className='tbl-wrap';var table=document.createElement('table');table.innerHTML='<thead><tr><th>Chute</th><th>Product</th><th>Bags</th><th>kg</th><th>Share</th></tr></thead>';var tbody=document.createElement('tbody');chuteEntries.forEach(function(e){var pct=totalKg>0?((e[1].kg/totalKg)*100).toFixed(1):'0';var tr=document.createElement('tr');tr.innerHTML='<td style="font-weight:700;">'+e[0]+'</td><td style="color:var(--muted);font-size:11px;">'+e[1].prod+'</td><td>'+e[1].bags+'</td><td style="font-weight:700;color:var(--gold);">'+e[1].kg.toLocaleString()+'</td><td><div style="display:flex;align-items:center;gap:6px;"><div style="background:var(--surface2);border-radius:3px;height:6px;width:50px;overflow:hidden;"><div style="height:100%;background:var(--steel);border-radius:3px;width:'+pct+'%;"></div></div><span style="font-size:11px;color:var(--muted);">'+pct+'%</span></div></td>';tbody.appendChild(tr);});table.appendChild(tbody);tbl.appendChild(table);chuteEl.appendChild(tbl);}
+  var opMap={};bags.forEach(function(b){var op=b.operator||'Unknown';if(!opMap[op])opMap[op]={kg:0,bags:0,dayKg:0,nightKg:0,dayBags:0,nightBags:0,dates:{}};opMap[op].kg+=(b.weight||0);opMap[op].bags++;var h=b.timestamp?new Date(b.timestamp).getHours():8;if(h>=7&&h<19){opMap[op].dayKg+=(b.weight||0);opMap[op].dayBags++;}else{opMap[op].nightKg+=(b.weight||0);opMap[op].nightBags++;}var d=b.date||(b.timestamp||'').substring(0,10);if(d)opMap[op].dates[d]=true;});
+  var opEntries=Object.entries(opMap).sort(function(a,b){return b[1].kg-a[1].kg;});
+  var opsEl=document.getElementById('stats-ops-table');opsEl.innerHTML='';
+  if(!opEntries.length){opsEl.innerHTML='<div class="empty" style="padding:20px;">No data</div>';}
+  else{var opTbl=document.createElement('div');opTbl.className='tbl-wrap';var opTable=document.createElement('table');opTable.innerHTML='<thead><tr><th>#</th><th>Operator</th><th>Total kg</th><th>Bags</th><th>Day kg</th><th>Night kg</th><th>Shifts</th></tr></thead>';var opTbody=document.createElement('tbody');opEntries.forEach(function(e,i){var medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1);var tr=document.createElement('tr');tr.style.cssText=i===0?'background:rgba(240,165,0,0.07);':'';tr.innerHTML='<td style="font-size:14px;">'+medal+'</td><td style="font-weight:700;">'+e[0]+'</td><td style="font-weight:800;color:var(--gold);">'+e[1].kg.toLocaleString()+'</td><td style="color:var(--muted);">'+e[1].bags+'</td><td style="color:var(--steel);font-size:11px;">'+e[1].dayKg.toLocaleString()+'<br><span style="color:var(--muted);font-size:10px;">'+e[1].dayBags+' bags</span></td><td style="color:#a78bfa;font-size:11px;">'+e[1].nightKg.toLocaleString()+'<br><span style="color:var(--muted);font-size:10px;">'+e[1].nightBags+' bags</span></td><td style="color:var(--muted);">'+Object.keys(e[1].dates).length+'</td>';opTbody.appendChild(tr);});opTable.appendChild(opTbody);opTbl.appendChild(opTable);opsEl.appendChild(opTbl);
+  if(opEntries.length>0){var best=opEntries[0];var callout=document.createElement('div');callout.style.cssText='margin-top:10px;padding:10px 12px;background:rgba(240,165,0,0.08);border:1px solid rgba(240,165,0,0.2);border-radius:var(--radius-sm);font-size:12px;';callout.innerHTML='🏆 <strong>'+best[0]+'</strong> leads with <strong>'+best[1].kg.toLocaleString()+' kg</strong> ('+best[1].bags+' bags) in this period.';opsEl.appendChild(callout);}}
+}
 </script>
 </body>
 </html>

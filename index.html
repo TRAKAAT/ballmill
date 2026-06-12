@@ -847,7 +847,7 @@ function renderStock(){
     filterEl.appendChild(chip);
   });
   const chutes=['1','2','3','4','5','6','BH1','BH2'];
-  const bags=db.bags.filter(function(b){return (b.feedId===activeFeed||b.isSeeded||b.isOpeningStock)&&b.qc==='pass';});
+  const bags=db.bags.filter(function(b){return b.feedId===activeFeed&&b.qc==='pass';});
   // Deduct sold bags
   const soldBagIds=new Set();
   (db.sales||[]).forEach(function(s){(s.bagIds||[]).forEach(function(id){soldBagIds.add(id);});});
@@ -1649,12 +1649,6 @@ function showServerSettings(){
 
     const divider=document.createElement('div');divider.className='divider';el.appendChild(divider);
     const dangerHdr=document.createElement('div');dangerHdr.className='sec-hdr';dangerHdr.style.color='var(--red)';dangerHdr.textContent='⚠ Data Reset';el.appendChild(dangerHdr);
-    const drossNoteEl=document.createElement('div');drossNoteEl.style.cssText='font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5;';
-    drossNoteEl.textContent='Wipes ONLY Aluminium Dross bags and shifts from the server and local storage. NF Carbon Black data is untouched.';
-    el.appendChild(drossNoteEl);
-    const drossWipeBtn=document.createElement('button');drossWipeBtn.className='btn btn-red';drossWipeBtn.textContent='🗑 Wipe Al Dross Data Only';
-    drossWipeBtn.addEventListener('click',wipeDrossData);el.appendChild(drossWipeBtn);
-    const divider2=document.createElement('div');divider2.style.cssText='height:1px;background:var(--border);margin:12px 0;';el.appendChild(divider2);
     const noteEl=document.createElement('div');noteEl.style.cssText='font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5;';
     noteEl.textContent='Wipes ALL bags, sales & shifts from the server and local storage, then seeds the opening stock totals (NF Carbon Black, up to 17 May 2026) as a single historical record per chute.';
     el.appendChild(noteEl);
@@ -1664,41 +1658,6 @@ function showServerSettings(){
 }
 
 // ════════════ WIPE & SEED OPENING STOCK ════════════
-// ════════════ WIPE AL DROSS DATA ONLY ════════════
-async function wipeDrossData(){
-  var settings=getSettings();
-  var fms=settings.feedMaterials||[];
-  var drossFeed=fms.find(function(f){return f.name&&f.name.toLowerCase().includes('dross');});
-  if(!drossFeed){
-    alert('No Aluminium Dross feed material found in settings.\n\nMake sure it is registered under Admin → Feed Materials before wiping.');
-    return;
-  }
-  var feedId=drossFeed.id;
-  var feedName=drossFeed.name;
-  if(!confirm('⚠️ WARNING\n\nThis will permanently delete ALL bags and shifts for:\n"'+feedName+'"\n\nNF Carbon Black data will NOT be affected.\n\nAre you sure?')) return;
-  var url=getServerUrl();
-  if(!url){alert('Server URL not set.');return;}
-  showSyncStatus('⟳ Wiping '+feedName+' data from server...','var(--red)');
-  try {
-    var res=await fetch(url+'/bags/by-feed/'+encodeURIComponent(feedId)+'?wipeShifts=1',{method:'DELETE'});
-    if(!res.ok) throw new Error('Server error: '+res.status);
-    var result=await res.json();
-    var db=getDB();
-    var removedBags=db.bags.filter(function(b){return b.feedId===feedId;}).length;
-    var removedShifts=(db.shifts||[]).filter(function(s){return s.feedId===feedId;}).length;
-    db.bags=db.bags.filter(function(b){return b.feedId!==feedId;});
-    if(db.shifts) db.shifts=db.shifts.filter(function(s){return s.feedId!==feedId;});
-    saveDB(db);
-    showSyncStatus('✅ Wiped '+feedName+' data','var(--green)');
-    alert('✅ Al Dross wipe complete!\n\nServer: '+result.bagsDeleted+' bags, '+result.shiftsDeleted+' shifts deleted\nLocal: '+removedBags+' bags, '+removedShifts+' shifts removed');
-    renderHome();
-  } catch(e) {
-    console.error('wipeDrossData error:',e);
-    showSyncStatus('❌ Wipe failed: '+e.message,'var(--red)');
-    alert('❌ Wipe failed: '+e.message);
-  }
-}
-
 async function wipeAndSeedOpeningStock(){
   if(!confirm('⚠️ WARNING\n\nThis will permanently delete ALL bags, sales and shifts from the server and your local storage.\n\nIt will then upload the NF Carbon Black opening stock (pre-18 May 2026) plus all scanned bag data (18 May – 05 Jun 2026).\n\nAre you sure?')) return;
   const url=getServerUrl();

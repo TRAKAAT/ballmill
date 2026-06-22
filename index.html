@@ -2456,7 +2456,7 @@ function copyStockText(){
   var now=new Date();
   var lines=['*GeT Energy · Ball Mill*','*'+window._srFeedName+'  —  '+(window._srMode==='stock'?'Current Stock':'Total Historic')+'*','_'+now.toLocaleDateString('en-ZA',{weekday:'short',day:'numeric',month:'short',year:'numeric'})+' · '+now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'})+'_','','*Product Stock:*'];
   data.prodData.forEach(function(p){lines.push(p.name+': *'+p.kg.toLocaleString()+' kg* ('+p.pct+'% · '+p.bags+' bags)');});
-  if(data.chuteData.length){lines.push('');lines.push('*By Chute:*');data.chuteData.forEach(function(r){var pct=data.totalKg>0?Math.round(r.kg/data.totalKg*100):0;lines.push('C'+r.chute+' ('+r.prod+'): '+r.kg.toLocaleString()+' kg · '+pct+'%');});}
+  if(data.chuteData.length){lines.push('');lines.push('*By Chute:*');data.chuteData.forEach(function(r){var pct=data.totalKg>0?(r.kg/data.totalKg*100).toFixed(1):0;lines.push('C'+r.chute+' ('+r.prod+'): '+r.kg.toLocaleString()+' kg · '+pct+'%');});}
   lines.push('');lines.push('_GeT Energy (Pty) Ltd · Atlantis Industrial_');
   var txt=lines.join('\n');
   if(navigator.clipboard){navigator.clipboard.writeText(txt).then(function(){alert('Copied — paste into WhatsApp.');});}

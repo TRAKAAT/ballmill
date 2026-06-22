@@ -2404,7 +2404,7 @@ function drawStockReport(){
   var RING_CX=PAD+80,RING_CY=y+RING_H/2,RING_R=62,RING_LW=16;
   if(data.prodData.length>0){
     var GAP=0.04,startAngle=-Math.PI/2;
-    data.prodData.forEach(function(p,i){var slice=(p.kg/data.totalKg)*Math.PI*2-GAP;ctx.beginPath();ctx.arc(RING_CX,RING_CY,RING_R,startAngle,startAngle+slice);ctx.strokeStyle=COLORS[i%COLORS.length];ctx.lineWidth=RING_LW;ctx.lineCap='butt';ctx.stroke();startAngle+=slice+GAP;});
+    data.prodData.forEach(function(p,i){var fullSlice=(p.kg/data.totalKg)*Math.PI*2;var gap=fullSlice>GAP*2?GAP:0;var slice=fullSlice-gap;if(slice<=0)return;ctx.beginPath();ctx.arc(RING_CX,RING_CY,RING_R,startAngle,startAngle+slice);ctx.strokeStyle=COLORS[i%COLORS.length];ctx.lineWidth=RING_LW;ctx.lineCap='butt';ctx.stroke();startAngle+=slice+gap;});
   } else {ctx.beginPath();ctx.arc(RING_CX,RING_CY,RING_R,0,Math.PI*2);ctx.strokeStyle='rgba(255,255,255,0.08)';ctx.lineWidth=RING_LW;ctx.stroke();}
   ctx.textAlign='center';ctx.fillStyle='rgba(255,255,255,0.25)';ctx.font='9px system-ui,sans-serif';ctx.fillText('TOTAL',RING_CX,RING_CY-8);
   ctx.fillStyle='#ffffff';ctx.font='700 16px system-ui,sans-serif';ctx.fillText(data.totalKg.toLocaleString(),RING_CX,RING_CY+10);

@@ -1533,7 +1533,7 @@ function loadEditList(){
     const delBtn=document.createElement('button');delBtn.className='btn btn-ghost btn-sm';delBtn.textContent='Del';delBtn.style.color='var(--red)';
     (function(bag){
       editBtn.addEventListener('click',function(){openEditBag(bag);});
-      delBtn.addEventListener('click',function(){if(confirm('Delete this bag record?')){const db2=getDB();db2.bags=db2.bags.filter(function(x){return x.id!==bag.id;});saveDB(db2);loadEditList();updateHomeStats();}});
+      delBtn.addEventListener('click',function(){if(confirm('Delete this bag record?')){const db2=getDB();db2.bags=db2.bags.filter(function(x){return x.id!==bag.id;});saveDB(db2);loadEditList();updateHomeStats();renderStock();var url=getServerUrl();if(url){fetch(url+'/bags/'+bag.id,{method:'DELETE'}).catch(function(e){console.warn('Server delete failed:',e.message);});}}});
     })(b);
     right.appendChild(editBtn);right.appendChild(delBtn);
     entry.appendChild(left);entry.appendChild(right);el.appendChild(entry);
@@ -2079,11 +2079,9 @@ async function pullFromServer(){
     if(!res.ok)throw new Error('Server error '+res.status);
     const data=await res.json();
     const db=getDB();
-    // Merge bags - server wins for conflicts
-    const bagMap={};
-    db.bags.forEach(function(b){bagMap[b.id]=b;});
-    (data.bags||[]).forEach(function(b){bagMap[b.id]=b;});
-    db.bags=Object.values(bagMap);
+    // Server is source of truth — pull replaces local bags/sales/shifts with server data
+    // This ensures that bags deleted on the server (or any device) are reflected everywhere
+    db.bags=data.bags||[];
     const saleMap={};
     (db.sales||[]).forEach(function(s){saleMap[s.id]=s;});
     (data.sales||[]).forEach(function(s){saleMap[s.id]=s;});
@@ -2377,7 +2375,7 @@ function getStockReportData(feedId,mode){
   var totalKg=bags.reduce(function(s,b){return s+(b.weight||0);},0);
   var prodMap={};
   bags.forEach(function(b){var k=b.productName||'Unknown';if(!prodMap[k])prodMap[k]={kg:0,bags:0};prodMap[k].kg+=(b.weight||0);prodMap[k].bags++;});
-  var prodData=Object.entries(prodMap).map(function(e){return {name:e[0],kg:e[1].kg,bags:e[1].bags,pct:totalKg>0?Math.round(e[1].kg/totalKg*100):0};}).sort(function(a,b){return b.kg-a.kg;});
+  var prodData=Object.entries(prodMap).map(function(e){return {name:e[0],kg:e[1].kg,bags:e[1].bags,pct:totalKg>0?(e[1].kg/totalKg*100).toFixed(1):0};}).sort(function(a,b){return b.kg-a.kg;});
   var chuteData=chutes.map(function(c){var cb=bags.filter(function(b){return b.chute===c;});var kg=cb.reduce(function(s,b){return s+(b.weight||0);},0);var key=feedId+'_'+c;var prod=chuteMap[key]?chuteMap[key].productName:'—';return {chute:c,prod:prod,kg:kg,bags:cb.length};}).filter(function(r){return r.kg>0;});
   return {totalKg:totalKg,totalBags:bags.length,prodData:prodData,chuteData:chuteData};
 }
@@ -2431,7 +2429,7 @@ function drawStockReport(){
       var rY=y+i*38;if(i%2===0){ctx.fillStyle='rgba(255,255,255,0.02)';ctx.fillRect(0,rY,W,38);}
       ctx.fillStyle='#f0a500';ctx.font='700 13px system-ui,sans-serif';ctx.fillText(row.chute,PAD,rY+24);
       ctx.fillStyle='rgba(255,255,255,0.5)';ctx.font='12px system-ui,sans-serif';ctx.fillText(row.prod,PAD+60,rY+24);
-      var pct=data.totalKg>0?Math.round(row.kg/data.totalKg*100):0;
+      var pct=data.totalKg>0?(row.kg/data.totalKg*100).toFixed(1):0;
       ctx.textAlign='right';ctx.fillStyle='rgba(255,255,255,0.32)';ctx.font='12px system-ui,sans-serif';ctx.fillText(row.bags,W-PAD-110,rY+24);
       ctx.fillStyle='#ffffff';ctx.font='700 13px system-ui,sans-serif';ctx.fillText(row.kg.toLocaleString(),W-PAD-44,rY+24);
       ctx.fillStyle='rgba(255,255,255,0.28)';ctx.font='11px system-ui,sans-serif';ctx.fillText(pct+'%',W-PAD,rY+24);ctx.textAlign='left';

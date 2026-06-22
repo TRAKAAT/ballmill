@@ -422,26 +422,81 @@ tr:last-child td{border-bottom:none;}
 <div class="screen" id="screen-stats">
 <div class="screen-content">
   <div class="screen-title">📈 Statistics</div>
-  <div class="screen-sub">Production analytics & operator performance</div>
-  <div class="chip-row" id="stats-preset-chips">
-    <div class="chip active" data-preset="today">Today</div>
-    <div class="chip" data-preset="week">This Week</div>
-    <div class="chip" data-preset="month">This Month</div>
-    <div class="chip" data-preset="custom">Custom</div>
+
+  <!-- Stats Tab Bar -->
+  <div style="display:flex;gap:4px;background:var(--surface);border-radius:var(--radius-sm);padding:4px;margin-bottom:12px;">
+    <button id="stab-overview" onclick="switchStatsTab('overview')" style="flex:1;padding:8px 4px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;background:var(--gold);color:#1a1200;">Overview</button>
+    <button id="stab-shifts" onclick="switchStatsTab('shifts')" style="flex:1;padding:8px 4px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;background:transparent;color:var(--muted);">Shift Report</button>
+    <button id="stab-operators" onclick="switchStatsTab('operators')" style="flex:1;padding:8px 4px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;background:transparent;color:var(--muted);">Operators</button>
   </div>
-  <div id="stats-custom-range" style="display:none;">
-    <div style="display:flex;gap:8px;">
-      <div class="fu-row" style="flex:1;margin:0;"><label>From</label><input type="date" class="fu-input" id="stats-from"></div>
-      <div class="fu-row" style="flex:1;margin:0;"><label>To</label><input type="date" class="fu-input" id="stats-to"></div>
+
+  <!-- ── TAB: OVERVIEW ── -->
+  <div id="stab-panel-overview">
+    <div class="chip-row" id="stats-preset-chips">
+      <div class="chip active" data-preset="today">Today</div>
+      <div class="chip" data-preset="week">This Week</div>
+      <div class="chip" data-preset="month">This Month</div>
+      <div class="chip" data-preset="custom">Custom</div>
     </div>
-    <button class="btn btn-gold" style="margin-top:8px;" id="stats-apply-btn">Apply</button>
+    <div id="stats-custom-range" style="display:none;">
+      <div style="display:flex;gap:8px;">
+        <div class="fu-row" style="flex:1;margin:0;"><label>From</label><input type="date" class="fu-input" id="stats-from"></div>
+        <div class="fu-row" style="flex:1;margin:0;"><label>To</label><input type="date" class="fu-input" id="stats-to"></div>
+      </div>
+      <button class="btn btn-gold" style="margin-top:8px;" id="stats-apply-btn">Apply</button>
+    </div>
+    <div class="chip-row" id="stats-feed-chips"></div>
+    <div class="stock-grid" id="stats-kpi-grid" style="grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;"></div>
+    <div class="card"><div class="card-title">Product Mix</div><div id="stats-product-chart"></div></div>
+    <div class="card"><div class="card-title">Daily Output (kg)</div><div id="stats-trend-chart"></div></div>
+    <div class="card">
+      <div class="card-title">Day vs Night Shift</div>
+      <div id="stats-daynight-chart"></div>
+    </div>
+    <div class="card"><div class="card-title">Output by Chute</div><div id="stats-chute-chart"></div></div>
+    <div class="card"><div class="card-title">Operator League Table</div><div id="stats-ops-table"></div></div>
   </div>
-  <div class="chip-row" id="stats-feed-chips"></div>
-  <div class="stock-grid" id="stats-kpi-grid" style="grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;"></div>
-  <div class="card"><div class="card-title">Product Mix</div><div id="stats-product-chart"></div></div>
-  <div class="card"><div class="card-title">Daily Output (kg)</div><div id="stats-trend-chart"></div></div>
-  <div class="card"><div class="card-title">Output by Chute</div><div id="stats-chute-chart"></div></div>
-  <div class="card"><div class="card-title">Operator League Table</div><div id="stats-ops-table"></div></div>
+
+  <!-- ── TAB: SHIFT REPORT ── -->
+  <div id="stab-panel-shifts" style="display:none;">
+    <div class="card" style="margin-bottom:10px;">
+      <div class="card-title">Date Range</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div class="fu-row" style="flex:1;margin:0;"><label>From</label><input type="date" class="fu-input" id="sr-from"></div>
+        <div class="fu-row" style="flex:1;margin:0;"><label>To</label><input type="date" class="fu-input" id="sr-to"></div>
+      </div>
+      <div class="chip-row" style="margin-bottom:8px;">
+        <div class="chip" onclick="srSetRange('week')">This Week</div>
+        <div class="chip" onclick="srSetRange('lastweek')">Last Week</div>
+        <div class="chip" onclick="srSetRange('month')">This Month</div>
+        <div class="chip" onclick="srSetRange('lastmonth')">Last Month</div>
+      </div>
+      <div class="chip-row" id="sr-feed-chips" style="margin-bottom:8px;"></div>
+      <button class="btn btn-gold" style="width:100%;" onclick="renderShiftReport()">Generate Shift Report</button>
+    </div>
+    <div id="sr-output"></div>
+  </div>
+
+  <!-- ── TAB: OPERATORS ── -->
+  <div id="stab-panel-operators" style="display:none;">
+    <div class="card" style="margin-bottom:10px;">
+      <div class="card-title">Date Range</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div class="fu-row" style="flex:1;margin:0;"><label>From</label><input type="date" class="fu-input" id="op-from"></div>
+        <div class="fu-row" style="flex:1;margin:0;"><label>To</label><input type="date" class="fu-input" id="op-to"></div>
+      </div>
+      <div class="chip-row" style="margin-bottom:8px;">
+        <div class="chip" onclick="opSetRange('week')">This Week</div>
+        <div class="chip" onclick="opSetRange('lastweek')">Last Week</div>
+        <div class="chip" onclick="opSetRange('month')">This Month</div>
+        <div class="chip" onclick="opSetRange('lastmonth')">Last Month</div>
+      </div>
+      <div class="chip-row" id="op-feed-chips" style="margin-bottom:8px;"></div>
+      <button class="btn btn-gold" style="width:100%;" onclick="renderOperatorReport()">Generate Operator Report</button>
+    </div>
+    <div id="op-output"></div>
+  </div>
+
 </div>
 </div>
 
@@ -2529,6 +2584,412 @@ function renderStats(){
   if(!opEntries.length){opsEl.innerHTML='<div class="empty" style="padding:20px;">No data</div>';}
   else{var opTbl=document.createElement('div');opTbl.className='tbl-wrap';var opTable=document.createElement('table');opTable.innerHTML='<thead><tr><th>#</th><th>Operator</th><th>Total kg</th><th>Bags</th><th>Day kg</th><th>Night kg</th><th>Shifts</th></tr></thead>';var opTbody=document.createElement('tbody');opEntries.forEach(function(e,i){var medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':'#'+(i+1);var tr=document.createElement('tr');tr.style.cssText=i===0?'background:rgba(240,165,0,0.07);':'';tr.innerHTML='<td style="font-size:14px;">'+medal+'</td><td style="font-weight:700;">'+e[0]+'</td><td style="font-weight:800;color:var(--gold);">'+e[1].kg.toLocaleString()+'</td><td style="color:var(--muted);">'+e[1].bags+'</td><td style="color:var(--steel);font-size:11px;">'+e[1].dayKg.toLocaleString()+'<br><span style="color:var(--muted);font-size:10px;">'+e[1].dayBags+' bags</span></td><td style="color:#a78bfa;font-size:11px;">'+e[1].nightKg.toLocaleString()+'<br><span style="color:var(--muted);font-size:10px;">'+e[1].nightBags+' bags</span></td><td style="color:var(--muted);">'+Object.keys(e[1].dates).length+'</td>';opTbody.appendChild(tr);});opTable.appendChild(opTbody);opTbl.appendChild(opTable);opsEl.appendChild(opTbl);
   if(opEntries.length>0){var best=opEntries[0];var callout=document.createElement('div');callout.style.cssText='margin-top:10px;padding:10px 12px;background:rgba(240,165,0,0.08);border:1px solid rgba(240,165,0,0.2);border-radius:var(--radius-sm);font-size:12px;';callout.innerHTML='🏆 <strong>'+best[0]+'</strong> leads with <strong>'+best[1].kg.toLocaleString()+' kg</strong> ('+best[1].bags+' bags) in this period.';opsEl.appendChild(callout);}}
+  renderDayNightChart(bags);
+}
+
+// ════════════ STATS TABS ════════════
+var _statsTab = 'overview';
+function switchStatsTab(tab) {
+  _statsTab = tab;
+  ['overview','shifts','operators'].forEach(function(t) {
+    var panel = document.getElementById('stab-panel-'+t);
+    var btn = document.getElementById('stab-'+t);
+    if (!panel || !btn) return;
+    if (t === tab) {
+      panel.style.display = '';
+      btn.style.background = 'var(--gold)';
+      btn.style.color = '#1a1200';
+    } else {
+      panel.style.display = 'none';
+      btn.style.background = 'transparent';
+      btn.style.color = 'var(--muted)';
+    }
+  });
+  if (tab === 'shifts') srInitFeedChips();
+  if (tab === 'operators') opInitFeedChips();
+}
+
+// ── Day vs Night chart (added to overview) ───────────────────────────────────
+function renderDayNightChart(bags) {
+  var el = document.getElementById('stats-daynight-chart');
+  if (!el) return;
+  el.innerHTML = '';
+  var day = {kg:0,bags:0,shifts:{}}, night = {kg:0,bags:0,shifts:{}};
+  bags.forEach(function(b) {
+    var h = 8;
+    if (b.timestamp) h = new Date(b.timestamp).getHours();
+    else if (b.time) { var parts = b.time.split(':'); h = parseInt(parts[0]) || 8; }
+    var isDay = h >= 7 && h < 19;
+    if (isDay) { day.kg += (b.weight||0); day.bags++; if(b.shiftId) day.shifts[b.shiftId]=true; }
+    else { night.kg += (b.weight||0); night.bags++; if(b.shiftId) night.shifts[b.shiftId]=true; }
+  });
+  var db = getDB();
+  var dayShifts = db.shifts ? db.shifts.filter(function(s){return s.shiftType==='day';}) : [];
+  var nightShifts = db.shifts ? db.shifts.filter(function(s){return s.shiftType==='night';}) : [];
+  var dayAvg = dayShifts.length ? Math.round(day.kg / Math.max(Object.keys(day.shifts).length,1)) : 0;
+  var nightAvg = nightShifts.length ? Math.round(night.kg / Math.max(Object.keys(night.shifts).length,1)) : 0;
+  var total = day.kg + night.kg || 1;
+  var dayPct = (day.kg/total*100).toFixed(1);
+  var nightPct = (night.kg/total*100).toFixed(1);
+
+  // Comparison bar
+  var wrap = document.createElement('div');
+  wrap.style.cssText = 'margin-bottom:14px;';
+  var bar = document.createElement('div');
+  bar.style.cssText = 'display:flex;height:28px;border-radius:6px;overflow:hidden;margin-bottom:6px;';
+  var dayBar = document.createElement('div');
+  dayBar.style.cssText = 'background:var(--steel);height:100%;width:'+dayPct+'%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;transition:width .4s;';
+  dayBar.textContent = dayPct > 15 ? '☀ Day '+dayPct+'%' : '';
+  var nightBar = document.createElement('div');
+  nightBar.style.cssText = 'background:#a78bfa;height:100%;width:'+nightPct+'%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;transition:width .4s;';
+  nightBar.textContent = nightPct > 15 ? '🌙 Night '+nightPct+'%' : '';
+  bar.appendChild(dayBar); bar.appendChild(nightBar); wrap.appendChild(bar);
+  el.appendChild(wrap);
+
+  // Side by side stats
+  var grid = document.createElement('div');
+  grid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:10px;';
+  function dn(icon,label,kg,bags,avg,shifts,color) {
+    var d = document.createElement('div');
+    d.style.cssText = 'background:var(--surface2);border-radius:var(--radius-sm);padding:12px;border-left:3px solid '+color+';';
+    d.innerHTML = '<div style="font-size:13px;font-weight:700;color:'+color+';margin-bottom:8px;">'+icon+' '+label+'</div>'
+      +'<div style="font-size:20px;font-weight:800;color:var(--white);margin-bottom:2px;">'+kg.toLocaleString()+' kg</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-bottom:6px;">'+bags+' bags · '+Object.keys(shifts).length+' shifts</div>'
+      +'<div style="font-size:11px;color:var(--muted);">Avg per shift:</div>'
+      +'<div style="font-size:16px;font-weight:700;color:'+color+';">'+avg.toLocaleString()+' kg</div>';
+    return d;
+  }
+  grid.appendChild(dn('☀','Day Shift',day.kg,day.bags,dayAvg,day.shifts,'var(--steel)'));
+  grid.appendChild(dn('🌙','Night Shift',night.kg,night.bags,nightAvg,night.shifts,'#a78bfa'));
+  el.appendChild(grid);
+
+  // Winner callout
+  if (day.kg > 0 && night.kg > 0) {
+    var winner = dayAvg >= nightAvg ? {label:'Day Shift',avg:dayAvg,color:'var(--steel)',icon:'☀'} : {label:'Night Shift',avg:nightAvg,color:'#a78bfa',icon:'🌙'};
+    var diff = Math.abs(dayAvg - nightAvg);
+    var callout = document.createElement('div');
+    callout.style.cssText = 'margin-top:10px;padding:10px 12px;background:rgba(138,180,212,0.08);border:1px solid rgba(138,180,212,0.2);border-radius:var(--radius-sm);font-size:12px;';
+    callout.innerHTML = winner.icon+' <strong style="color:'+winner.color+'">'+winner.label+'</strong> averages <strong>'+diff.toLocaleString()+' kg more per shift</strong> in this period.';
+    el.appendChild(callout);
+  }
+}
+
+// ── Shift Report ──────────────────────────────────────────────────────────────
+var _srFeedId = 'all';
+function srInitFeedChips() {
+  var el = document.getElementById('sr-feed-chips');
+  if (!el) return;
+  el.innerHTML = '';
+  var feeds = getFeedMaterials();
+  function makeChip(id, name) {
+    var c = document.createElement('div');
+    c.className = 'chip' + (_srFeedId === id ? ' active' : '');
+    c.textContent = name;
+    c.onclick = function() { _srFeedId = id; srInitFeedChips(); };
+    el.appendChild(c);
+  }
+  makeChip('all', 'All Feeds');
+  feeds.slice().sort(function(a,b){return a.name.localeCompare(b.name);}).forEach(function(f){makeChip(f.id,f.name);});
+}
+function srSetRange(type) {
+  var now = new Date();
+  var from, to;
+  function fmt(d){return d.toLocaleDateString('en-CA');}
+  if(type==='week'){var day=now.getDay()===0?6:now.getDay()-1;from=new Date(now);from.setDate(now.getDate()-day);to=new Date(now);}
+  else if(type==='lastweek'){var day2=now.getDay()===0?6:now.getDay()-1;to=new Date(now);to.setDate(now.getDate()-day2-1);from=new Date(to);from.setDate(to.getDate()-6);}
+  else if(type==='month'){from=new Date(now.getFullYear(),now.getMonth(),1);to=new Date(now);}
+  else if(type==='lastmonth'){from=new Date(now.getFullYear(),now.getMonth()-1,1);to=new Date(now.getFullYear(),now.getMonth(),0);}
+  document.getElementById('sr-from').value=fmt(from);
+  document.getElementById('sr-to').value=fmt(to);
+}
+function renderShiftReport() {
+  var from = document.getElementById('sr-from').value;
+  var to = document.getElementById('sr-to').value;
+  if (!from || !to) { alert('Select a date range first.'); return; }
+  var db = getDB();
+  var allBags = db.bags.filter(function(b){ return b.qc==='pass'; });
+  var shifts = (db.shifts||[]).filter(function(s){
+    var d = s.startTime ? new Date(s.startTime).toLocaleDateString('en-CA') : '';
+    return d >= from && d <= to;
+  }).sort(function(a,b){ return (a.startTime||0)-(b.startTime||0); });
+
+  var out = document.getElementById('sr-output');
+  out.innerHTML = '';
+  if (!shifts.length) {
+    out.innerHTML = '<div class="empty" style="padding:20px;">No shifts found in that range. Make sure shifts were recorded with start times.</div>';
+    return;
+  }
+
+  // Summary KPIs across all shifts in range
+  var rangeBags = allBags.filter(function(b){
+    var d = b.date||(b.timestamp||'').substring(0,10);
+    return d>=from&&d<=to&&(_srFeedId==='all'||b.feedId===_srFeedId);
+  });
+  var rangeKg = rangeBags.reduce(function(s,b){return s+(b.weight||0);},0);
+  var prodTotals = {};
+  rangeBags.forEach(function(b){var k=b.productName||'Unknown';prodTotals[k]=(prodTotals[k]||0)+(b.weight||0);});
+
+  // Summary header
+  var sumCard = document.createElement('div');
+  sumCard.className = 'card';
+  var sumTitle = document.createElement('div'); sumTitle.className='card-title'; sumTitle.textContent='Period Summary: '+from+' → '+to;
+  sumCard.appendChild(sumTitle);
+  var sumGrid = document.createElement('div');
+  sumGrid.style.cssText = 'display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:10px;';
+  function kpi(icon,label,val,color){
+    var t=document.createElement('div');t.className='stock-tile';
+    t.innerHTML='<div class="stock-tile-label">'+icon+' '+label+'</div><div class="stock-tile-val" style="color:'+(color||'var(--gold)')+';">'+val+'</div>';
+    return t;
+  }
+  sumGrid.appendChild(kpi('📋','Total Shifts',shifts.length));
+  sumGrid.appendChild(kpi('⚖️','Total Output',rangeKg.toLocaleString()+' kg','var(--green)'));
+  sumGrid.appendChild(kpi('📅','Avg per Shift',shifts.length?Math.round(rangeKg/shifts.length).toLocaleString()+' kg':'—'));
+  sumGrid.appendChild(kpi('🛍','Total Bags',rangeBags.length,'var(--steel)'));
+  sumCard.appendChild(sumGrid);
+
+  // Product breakdown bars for range
+  var prodEntries = Object.entries(prodTotals).sort(function(a,b){return b[1]-a[1];});
+  var COLORS = ['#f0a500','#10b981','#3b82f6','#e91e8c','#f97316','#8ab4d4'];
+  if (prodEntries.length) {
+    var pbTitle = document.createElement('div');pbTitle.style.cssText='font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;';pbTitle.textContent='Product Breakdown';
+    sumCard.appendChild(pbTitle);
+    prodEntries.forEach(function(e,i){
+      var pct = rangeKg>0?(e[1]/rangeKg*100):0;
+      var row=document.createElement('div');row.style.cssText='margin-bottom:8px;';
+      var lbl=document.createElement('div');lbl.style.cssText='display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;';
+      lbl.innerHTML='<span style="font-weight:600;">'+e[0]+'</span><span style="color:var(--muted);">'+e[1].toLocaleString()+' kg <strong style="color:'+COLORS[i%COLORS.length]+';">'+pct.toFixed(1)+'%</strong></span>';
+      var tr=document.createElement('div');tr.style.cssText='background:var(--surface2);border-radius:4px;height:8px;overflow:hidden;';
+      var fl=document.createElement('div');fl.style.cssText='height:100%;border-radius:4px;background:'+COLORS[i%COLORS.length]+';width:'+pct.toFixed(1)+'%;';
+      tr.appendChild(fl);row.appendChild(lbl);row.appendChild(tr);sumCard.appendChild(row);
+    });
+  }
+  out.appendChild(sumCard);
+
+  // Per-shift cards
+  var shiftTitle = document.createElement('div');shiftTitle.className='sec-hdr';shiftTitle.textContent='Per Shift Breakdown';out.appendChild(shiftTitle);
+
+  shifts.forEach(function(shift, si) {
+    var shiftBags = allBags.filter(function(b){
+      return b.shiftId===shift.id && (_srFeedId==='all'||b.feedId===_srFeedId);
+    });
+    var shiftKg = shiftBags.reduce(function(s,b){return s+(b.weight||0);},0);
+    var shiftProds = {};
+    shiftBags.forEach(function(b){var k=b.productName||'Unknown';shiftProds[k]=(shiftProds[k]||0)+(b.weight||0);});
+    var crew = (shift.crew||[]).join(', ')||'—';
+    var startD = shift.startTime ? new Date(shift.startTime) : null;
+    var endD = shift.endTime ? new Date(shift.endTime) : null;
+    var dateStr = startD ? startD.toLocaleDateString('en-ZA',{weekday:'short',day:'numeric',month:'short'}) : '—';
+    var timeStr = startD ? startD.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}) : '';
+    if (endD) timeStr += ' – '+endD.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'});
+    var durMs = (shift.endTime&&shift.startTime)?shift.endTime-shift.startTime:null;
+    var durStr = durMs?Math.floor(durMs/3600000)+'h '+Math.round((durMs%3600000)/60000)+'m':'—';
+    var isDay = shift.shiftType==='day';
+    var shiftColor = isDay ? 'var(--steel)' : '#a78bfa';
+    var shiftIcon = isDay ? '☀' : '🌙';
+
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.style.cssText = 'margin-bottom:10px;border-left:3px solid '+shiftColor+';';
+
+    // Shift header
+    var hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;';
+    var left = document.createElement('div');
+    left.innerHTML = '<div style="font-size:14px;font-weight:800;color:'+shiftColor+';">'+shiftIcon+' '+(isDay?'Day':'Night')+' Shift</div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-top:2px;">'+dateStr+' · '+timeStr+'</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-top:2px;">⏱ '+durStr+'</div>';
+    var right = document.createElement('div');
+    right.style.cssText = 'text-align:right;';
+    right.innerHTML = '<div style="font-size:22px;font-weight:800;color:var(--gold);">'+shiftKg.toLocaleString()+'</div>'
+      +'<div style="font-size:10px;color:var(--muted);">kg · '+shiftBags.length+' bags</div>';
+    hdr.appendChild(left); hdr.appendChild(right); card.appendChild(hdr);
+
+    // Crew
+    var crewEl = document.createElement('div');
+    crewEl.style.cssText = 'font-size:12px;color:var(--muted);margin-bottom:10px;padding:6px 8px;background:var(--surface);border-radius:var(--radius-xs);';
+    crewEl.innerHTML = '👷 <strong style="color:var(--white);">Crew:</strong> '+crew;
+    card.appendChild(crewEl);
+
+    // Products for this shift
+    if (Object.keys(shiftProds).length) {
+      Object.entries(shiftProds).sort(function(a,b){return b[1]-a[1];}).forEach(function(e,i){
+        var pct = shiftKg>0?(e[1]/shiftKg*100):0;
+        var row=document.createElement('div');row.style.cssText='margin-bottom:6px;';
+        var lbl=document.createElement('div');lbl.style.cssText='display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;';
+        lbl.innerHTML='<span style="color:var(--muted);">'+e[0]+'</span><span style="font-weight:700;">'+e[1].toLocaleString()+' kg <span style="color:'+COLORS[i%COLORS.length]+';">'+pct.toFixed(1)+'%</span></span>';
+        var tr=document.createElement('div');tr.style.cssText='background:var(--surface2);border-radius:3px;height:6px;overflow:hidden;';
+        var fl=document.createElement('div');fl.style.cssText='height:100%;border-radius:3px;background:'+COLORS[i%COLORS.length]+';width:'+pct.toFixed(1)+'%;';
+        tr.appendChild(fl);row.appendChild(lbl);row.appendChild(tr);card.appendChild(row);
+      });
+    } else {
+      var noData=document.createElement('div');noData.style.cssText='font-size:12px;color:var(--muted);font-style:italic;';noData.textContent='No bags linked to this shift record.';card.appendChild(noData);
+    }
+    out.appendChild(card);
+  });
+
+  // Day vs Night summary for period
+  var dnCard = document.createElement('div');dnCard.className='card';
+  var dnTitle=document.createElement('div');dnTitle.className='card-title';dnTitle.textContent='Day vs Night — This Period';dnCard.appendChild(dnTitle);
+  var dayShifts=shifts.filter(function(s){return s.shiftType==='day';});
+  var nightShifts=shifts.filter(function(s){return s.shiftType==='night';});
+  function shiftAvgKg(shiftArr){
+    if(!shiftArr.length) return 0;
+    var tot=shiftArr.reduce(function(sum,shift){
+      return sum+allBags.filter(function(b){return b.shiftId===shift.id&&(_srFeedId==='all'||b.feedId===_srFeedId);}).reduce(function(s,b){return s+(b.weight||0);},0);
+    },0);
+    return Math.round(tot/shiftArr.length);
+  }
+  var dayAvgKg=shiftAvgKg(dayShifts), nightAvgKg=shiftAvgKg(nightShifts);
+  var dnGrid=document.createElement('div');dnGrid.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:10px;';
+  function dnStat(icon,label,n,avg,color){
+    var d=document.createElement('div');d.style.cssText='background:var(--surface2);border-radius:var(--radius-sm);padding:10px;border-top:2px solid '+color+';';
+    d.innerHTML='<div style="font-size:12px;font-weight:700;color:'+color+';margin-bottom:6px;">'+icon+' '+label+'</div>'
+      +'<div style="font-size:11px;color:var(--muted);">'+n+' shifts</div>'
+      +'<div style="font-size:18px;font-weight:800;color:var(--white);">'+avg.toLocaleString()+' kg</div>'
+      +'<div style="font-size:10px;color:var(--muted);">avg per shift</div>';
+    return d;
+  }
+  dnGrid.appendChild(dnStat('☀','Day Shift',dayShifts.length,dayAvgKg,'var(--steel)'));
+  dnGrid.appendChild(dnStat('🌙','Night Shift',nightShifts.length,nightAvgKg,'#a78bfa'));
+  dnCard.appendChild(dnGrid);
+  if(dayAvgKg>0&&nightAvgKg>0){
+    var best=dayAvgKg>=nightAvgKg?{l:'Day',v:dayAvgKg,c:'var(--steel)',i:'☀'}:{l:'Night',v:nightAvgKg,c:'#a78bfa',i:'🌙'};
+    var diff=Math.abs(dayAvgKg-nightAvgKg);
+    var pctDiff=Math.round(diff/Math.min(dayAvgKg,nightAvgKg)*100);
+    var co=document.createElement('div');co.style.cssText='margin-top:10px;padding:8px 12px;background:rgba(138,180,212,0.08);border-radius:var(--radius-xs);font-size:12px;';
+    co.innerHTML=best.i+' <strong style="color:'+best.c+'">'+best.l+' Shift</strong> averages <strong>'+diff.toLocaleString()+' kg more</strong> per shift ('+pctDiff+'% higher) in this period.';
+    dnCard.appendChild(co);
+  }
+  out.appendChild(dnCard);
+}
+
+// ── Operator Performance Report ───────────────────────────────────────────────
+var _opFeedId = 'all';
+function opInitFeedChips() {
+  var el = document.getElementById('op-feed-chips');
+  if (!el) return;
+  el.innerHTML = '';
+  var feeds = getFeedMaterials();
+  function makeChip(id, name) {
+    var c = document.createElement('div');
+    c.className = 'chip' + (_opFeedId === id ? ' active' : '');
+    c.textContent = name;
+    c.onclick = function() { _opFeedId = id; opInitFeedChips(); };
+    el.appendChild(c);
+  }
+  makeChip('all','All Feeds');
+  feeds.slice().sort(function(a,b){return a.name.localeCompare(b.name);}).forEach(function(f){makeChip(f.id,f.name);});
+}
+function opSetRange(type) {
+  var now=new Date();var from,to;
+  function fmt(d){return d.toLocaleDateString('en-CA');}
+  if(type==='week'){var day=now.getDay()===0?6:now.getDay()-1;from=new Date(now);from.setDate(now.getDate()-day);to=new Date(now);}
+  else if(type==='lastweek'){var day2=now.getDay()===0?6:now.getDay()-1;to=new Date(now);to.setDate(now.getDate()-day2-1);from=new Date(to);from.setDate(to.getDate()-6);}
+  else if(type==='month'){from=new Date(now.getFullYear(),now.getMonth(),1);to=new Date(now);}
+  else if(type==='lastmonth'){from=new Date(now.getFullYear(),now.getMonth()-1,1);to=new Date(now.getFullYear(),now.getMonth(),0);}
+  document.getElementById('op-from').value=fmt(from);
+  document.getElementById('op-to').value=fmt(to);
+}
+function renderOperatorReport() {
+  var from=document.getElementById('op-from').value;
+  var to=document.getElementById('op-to').value;
+  if(!from||!to){alert('Select a date range first.');return;}
+  var db=getDB();
+  var bags=db.bags.filter(function(b){
+    if(b.qc!=='pass')return false;
+    var d=b.date||(b.timestamp||'').substring(0,10);
+    return d>=from&&d<=to&&(_opFeedId==='all'||b.feedId===_opFeedId);
+  });
+  var out=document.getElementById('op-output');out.innerHTML='';
+  if(!bags.length){out.innerHTML='<div class="empty" style="padding:20px;">No data in that range.</div>';return;}
+
+  // Build operator data
+  var opMap={};
+  bags.forEach(function(b){
+    var op=b.operator||'Unknown';
+    if(!opMap[op])opMap[op]={kg:0,bags:0,dayKg:0,nightKg:0,dayBags:0,nightBags:0,shifts:{},products:{},dailyKg:{}};
+    opMap[op].kg+=(b.weight||0);opMap[op].bags++;
+    if(b.shiftId)opMap[op].shifts[b.shiftId]=true;
+    var k=b.productName||'Unknown';opMap[op].products[k]=(opMap[op].products[k]||0)+(b.weight||0);
+    var d=b.date||(b.timestamp||'').substring(0,10);if(d)opMap[op].dailyKg[d]=(opMap[op].dailyKg[d]||0)+(b.weight||0);
+    var h=8;if(b.timestamp)h=new Date(b.timestamp).getHours();else if(b.time){var p=b.time.split(':');h=parseInt(p[0])||8;}
+    if(h>=7&&h<19){opMap[op].dayKg+=(b.weight||0);opMap[op].dayBags++;}
+    else{opMap[op].nightKg+=(b.weight||0);opMap[op].nightBags++;}
+  });
+  var opEntries=Object.entries(opMap).sort(function(a,b){return b[1].kg-a[1].kg;});
+  var totalKg=bags.reduce(function(s,b){return s+(b.weight||0);},0);
+  var MEDALS=['🥇','🥈','🥉'];
+  var COLORS=['#f0a500','#10b981','#3b82f6','#e91e8c','#f97316','#8ab4d4'];
+
+  // Period header
+  var ph=document.createElement('div');ph.className='card';
+  ph.innerHTML='<div class="card-title">Operator Performance: '+from+' → '+to+'</div>'
+    +'<div style="font-size:12px;color:var(--muted);">'+opEntries.length+' operators · '+bags.length+' bags · '+totalKg.toLocaleString()+' kg total</div>';
+  out.appendChild(ph);
+
+  // League table card
+  var ltCard=document.createElement('div');ltCard.className='card';
+  var ltTitle=document.createElement('div');ltTitle.className='card-title';ltTitle.textContent='League Table';ltCard.appendChild(ltTitle);
+  opEntries.forEach(function(e,i){
+    var op=e[0],d=e[1];
+    var pct=totalKg>0?(d.kg/totalKg*100):0;
+    var nShifts=Object.keys(d.shifts).length||1;
+    var avgPerShift=Math.round(d.kg/nShifts);
+    var medal=i<3?MEDALS[i]:'#'+(i+1);
+    var bar=document.createElement('div');bar.style.cssText='margin-bottom:12px;padding-bottom:12px;'+(i<opEntries.length-1?'border-bottom:1px solid var(--border);':'');
+    bar.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
+      +'<div style="font-size:13px;font-weight:700;">'+medal+' '+op+'</div>'
+      +'<div style="text-align:right;"><span style="font-size:16px;font-weight:800;color:var(--gold);">'+d.kg.toLocaleString()+'</span><span style="font-size:10px;color:var(--muted);"> kg</span></div>'
+      +'</div>'
+      +'<div style="background:var(--surface2);border-radius:4px;height:8px;overflow:hidden;margin-bottom:4px;">'
+      +'<div style="height:100%;border-radius:4px;background:'+COLORS[i%COLORS.length]+';width:'+pct.toFixed(1)+'%;"></div>'
+      +'</div>'
+      +'<div style="display:flex;gap:12px;font-size:10px;color:var(--muted);">'
+      +'<span>'+d.bags+' bags</span>'
+      +'<span>'+Object.keys(d.shifts).length+' shifts</span>'
+      +'<span>Avg '+avgPerShift.toLocaleString()+' kg/shift</span>'
+      +'<span style="color:var(--steel);">☀ '+d.dayKg.toLocaleString()+'</span>'
+      +'<span style="color:#a78bfa;">🌙 '+d.nightKg.toLocaleString()+'</span>'
+      +'</div>';
+    ltCard.appendChild(bar);
+  });
+  out.appendChild(ltCard);
+
+  // Individual operator detail cards
+  var detTitle=document.createElement('div');detTitle.className='sec-hdr';detTitle.textContent='Individual Breakdown';out.appendChild(detTitle);
+  opEntries.forEach(function(e,i){
+    var op=e[0],d=e[1];
+    var nShifts=Math.max(Object.keys(d.shifts).length,1);
+    var avgPerShift=Math.round(d.kg/nShifts);
+    var card=document.createElement('div');card.className='card';card.style.cssText='margin-bottom:10px;border-left:3px solid '+COLORS[i%COLORS.length]+';';
+    var hdr=document.createElement('div');hdr.style.cssText='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;';
+    hdr.innerHTML='<div><div style="font-size:14px;font-weight:800;color:'+COLORS[i%COLORS.length]+';">'+(i<3?MEDALS[i]:'')+'  '+op+'</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-top:2px;">'+Object.keys(d.shifts).length+' shifts · '+d.bags+' bags</div></div>'
+      +'<div style="text-align:right;"><div style="font-size:22px;font-weight:800;color:var(--gold);">'+d.kg.toLocaleString()+'</div><div style="font-size:10px;color:var(--muted);">total kg</div></div>';
+    card.appendChild(hdr);
+    // Avg per shift
+    var avgEl=document.createElement('div');avgEl.style.cssText='display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;';
+    function miniStat(label,val,color){var d2=document.createElement('div');d2.style.cssText='background:var(--surface2);border-radius:var(--radius-xs);padding:6px 8px;text-align:center;';d2.innerHTML='<div style="font-size:10px;color:var(--muted);">'+label+'</div><div style="font-size:14px;font-weight:700;color:'+(color||'var(--white)')+';">'+val+'</div>';return d2;}
+    avgEl.appendChild(miniStat('Avg/shift',avgPerShift.toLocaleString()+' kg','var(--gold)'));
+    avgEl.appendChild(miniStat('☀ Day',d.dayKg.toLocaleString()+' kg','var(--steel)'));
+    avgEl.appendChild(miniStat('🌙 Night',d.nightKg.toLocaleString()+' kg','#a78bfa'));
+    card.appendChild(avgEl);
+    // Product breakdown
+    var prodList=Object.entries(d.products).sort(function(a,b){return b[1]-a[1];});
+    if(prodList.length){
+      var plTitle=document.createElement('div');plTitle.style.cssText='font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:6px;';plTitle.textContent='Product Output';card.appendChild(plTitle);
+      prodList.forEach(function(pe,pi){
+        var pct=d.kg>0?(pe[1]/d.kg*100):0;
+        var row=document.createElement('div');row.style.cssText='margin-bottom:4px;';
+        var lbl=document.createElement('div');lbl.style.cssText='display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;';
+        lbl.innerHTML='<span style="color:var(--muted);">'+pe[0]+'</span><span style="font-weight:700;">'+pe[1].toLocaleString()+' kg <span style="color:'+COLORS[pi%COLORS.length]+'">'+pct.toFixed(1)+'%</span></span>';
+        var tr=document.createElement('div');tr.style.cssText='background:var(--surface2);border-radius:3px;height:5px;overflow:hidden;';
+        var fl=document.createElement('div');fl.style.cssText='height:100%;border-radius:3px;background:'+COLORS[pi%COLORS.length]+';width:'+pct.toFixed(1)+'%;';
+        tr.appendChild(fl);row.appendChild(lbl);row.appendChild(tr);card.appendChild(row);
+      });
+    }
+    out.appendChild(card);
+  });
 }
 
 // ════════════ PERIOD SHIFT REPORT (Excel export) ════════════

@@ -946,6 +946,17 @@ function renderProdBagList(){
   });
 }
 
+// ════════════ PRODUCT NAME NORMALISATION ════════════
+// Maps old/renamed product names to their current canonical name.
+// Add any future renames here: 'Old Name': 'New Name'
+var PRODUCT_NAME_ALIASES = {
+  'Oxy Dust': 'Oxy Fines'
+};
+function normaliseProductName(name) {
+  if (!name) return name;
+  return PRODUCT_NAME_ALIASES[name] || name;
+}
+
 // ════════════ STOCK ════════════
 function renderStock(){
   const db=getDB();
@@ -991,7 +1002,7 @@ function renderStock(){
   const prodTitle=document.createElement('div');prodTitle.className='sec-hdr';prodTitle.textContent='Stock by Product';contentEl.appendChild(prodTitle);
   const prodMap={};
   stockBags.forEach(function(b){
-    const k=b.productName||'Unknown';
+    const k=normaliseProductName(b.productName||'Unknown');
     if(!prodMap[k])prodMap[k]={weight:0,bags:0};
     prodMap[k].weight+=b.weight;prodMap[k].bags++;
   });
@@ -1074,7 +1085,7 @@ function openRegisterSale(){
   // Group by product
   const prodMap={};
   availBags.forEach(function(b){
-    const k=(b.productName||'Unknown')+'|'+(b.feedName||'');
+    const k=(normaliseProductName(b.productName||'Unknown'))+'|'+(b.feedName||'');
     if(!prodMap[k])prodMap[k]={productName:b.productName||'Unknown',feedName:b.feedName||'',bags:[],weight:0};
     prodMap[k].bags.push(b.id);prodMap[k].weight+=b.weight;
   });
@@ -2429,7 +2440,7 @@ function getStockReportData(feedId,mode){
   var bags=mode==='stock'?allPass.filter(function(b){return !soldIds.has(b.id);}):allPass;
   var totalKg=bags.reduce(function(s,b){return s+(b.weight||0);},0);
   var prodMap={};
-  bags.forEach(function(b){var k=b.productName||'Unknown';if(!prodMap[k])prodMap[k]={kg:0,bags:0};prodMap[k].kg+=(b.weight||0);prodMap[k].bags++;});
+  bags.forEach(function(b){var k=normaliseProductName(b.productName||'Unknown');if(!prodMap[k])prodMap[k]={kg:0,bags:0};prodMap[k].kg+=(b.weight||0);prodMap[k].bags++;});
   var prodData=Object.entries(prodMap).map(function(e){return {name:e[0],kg:e[1].kg,bags:e[1].bags,pct:totalKg>0?(e[1].kg/totalKg*100).toFixed(1):0};}).sort(function(a,b){return b.kg-a.kg;});
   var chuteData=chutes.map(function(c){var cb=bags.filter(function(b){return b.chute===c;});var kg=cb.reduce(function(s,b){return s+(b.weight||0);},0);var key=feedId+'_'+c;var prod=chuteMap[key]?chuteMap[key].productName:'—';return {chute:c,prod:prod,kg:kg,bags:cb.length};}).filter(function(r){return r.kg>0;});
   return {totalKg:totalKg,totalBags:bags.length,prodData:prodData,chuteData:chuteData};
@@ -2563,7 +2574,7 @@ function renderStats(){
   kpiTile('🏆','Best Day',best>0?best.toLocaleString()+' kg':'—','single day','var(--green)');
   var rPct=(bags.length+rejectBags)>0?Math.round(rejectBags/(bags.length+rejectBags)*100):0;
   kpiTile('❌','Reject Rate',rPct+'%',rejectBags+' bags',rPct>10?'var(--red)':'var(--muted)');
-  var prodMap={};bags.forEach(function(b){var k=b.productName||'Unknown';prodMap[k]=(prodMap[k]||0)+(b.weight||0);});
+  var prodMap={};bags.forEach(function(b){var k=normaliseProductName(b.productName||'Unknown');prodMap[k]=(prodMap[k]||0)+(b.weight||0);});
   var prodEl=document.getElementById('stats-product-chart');prodEl.innerHTML='';
   var COLORS=['#f0a500','#10b981','#3b82f6','#e91e8c','#f97316','#8ab4d4'];
   var prodEntries=Object.entries(prodMap).sort(function(a,b){return b[1]-a[1];});
@@ -2727,7 +2738,7 @@ function renderShiftReport() {
   });
   var rangeKg = rangeBags.reduce(function(s,b){return s+(b.weight||0);},0);
   var prodTotals = {};
-  rangeBags.forEach(function(b){var k=b.productName||'Unknown';prodTotals[k]=(prodTotals[k]||0)+(b.weight||0);});
+  rangeBags.forEach(function(b){var k=normaliseProductName(b.productName||'Unknown');prodTotals[k]=(prodTotals[k]||0)+(b.weight||0);});
 
   // Summary header
   var sumCard = document.createElement('div');
@@ -2774,7 +2785,7 @@ function renderShiftReport() {
     });
     var shiftKg = shiftBags.reduce(function(s,b){return s+(b.weight||0);},0);
     var shiftProds = {};
-    shiftBags.forEach(function(b){var k=b.productName||'Unknown';shiftProds[k]=(shiftProds[k]||0)+(b.weight||0);});
+    shiftBags.forEach(function(b){var k=normaliseProductName(b.productName||'Unknown');shiftProds[k]=(shiftProds[k]||0)+(b.weight||0);});
     var crew = (shift.crew||[]).join(', ')||'—';
     var startD = shift.startTime ? new Date(shift.startTime) : null;
     var endD = shift.endTime ? new Date(shift.endTime) : null;
@@ -2910,7 +2921,7 @@ function renderOperatorReport() {
     if(!opMap[op])opMap[op]={kg:0,bags:0,dayKg:0,nightKg:0,dayBags:0,nightBags:0,shifts:{},products:{},dailyKg:{}};
     opMap[op].kg+=(b.weight||0);opMap[op].bags++;
     if(b.shiftId)opMap[op].shifts[b.shiftId]=true;
-    var k=b.productName||'Unknown';opMap[op].products[k]=(opMap[op].products[k]||0)+(b.weight||0);
+    var k=normaliseProductName(b.productName||'Unknown');opMap[op].products[k]=(opMap[op].products[k]||0)+(b.weight||0);
     var d=b.date||(b.timestamp||'').substring(0,10);if(d)opMap[op].dailyKg[d]=(opMap[op].dailyKg[d]||0)+(b.weight||0);
     var h=8;if(b.timestamp)h=new Date(b.timestamp).getHours();else if(b.time){var p=b.time.split(':');h=parseInt(p[0])||8;}
     if(h>=7&&h<19){opMap[op].dayKg+=(b.weight||0);opMap[op].dayBags++;}
@@ -3052,7 +3063,7 @@ function generatePeriodShiftReport(){
     const chuteTotals={};PSR_CHUTES.forEach(function(c){chuteTotals[c]=0;});
     passBags.forEach(function(b){if(b.chute)chuteTotals[b.chute]=(chuteTotals[b.chute]||0)+(b.weight||0);});
     const productTotals={};
-    passBags.forEach(function(b){const k=b.productName||'Unclassified';productTotals[k]=(productTotals[k]||0)+(b.weight||0);});
+    passBags.forEach(function(b){const k=normaliseProductName(b.productName||'Unclassified');productTotals[k]=(productTotals[k]||0)+(b.weight||0);});
     const totalKg=passBags.reduce(function(s,b){return s+(b.weight||0);},0);
     const rejectKg=shiftBags.filter(function(b){return b.qc==='reject';}).reduce(function(s,b){return s+(b.weight||0);},0);
     return{

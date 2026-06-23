@@ -627,8 +627,36 @@ setInterval(updateClock,1000);updateClock();
 
 // ════════════ ACTIVE SHIFT ════════════
 let _activeShift=null;
-function getActiveShift(){if(!_activeShift){const s=sessionStorage.getItem('bm_active_shift');if(s)_activeShift=JSON.parse(s);}return _activeShift;}
-function setActiveShift(s){_activeShift=s;sessionStorage.setItem('bm_active_shift',s?JSON.stringify(s):'null');}
+function getActiveShift(){if(!_activeShift){const s=localStorage.getItem('bm_active_shift');if(s)try{const p=JSON.parse(s);_activeShift=(p&&p.id)?p:null;}catch(e){_activeShift=null;}}return _activeShift;}
+function setActiveShift(s){_activeShift=s;if(s&&s.id){localStorage.setItem('bm_active_shift',JSON.stringify(s));}else{localStorage.removeItem('bm_active_shift');}}
+async function pushActiveShiftToServer(shift){
+  const url=getServerUrl();if(!url)return;
+  try{
+    if(shift&&shift.id){
+      await fetch(url+'/active-shift',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(shift)});
+    } else {
+      await fetch(url+'/active-shift',{method:'DELETE'});
+    }
+  }catch(e){console.warn('Active shift server push failed:',e.message);}
+}
+async function syncActiveShiftFromServer(){
+  const url=getServerUrl();if(!url)return;
+  try{
+    const res=await fetch(url+'/active-shift');
+    if(!res.ok)return;
+    const serverShift=await res.json();
+    const localShift=getActiveShift();
+    if(serverShift&&serverShift.id){
+      if(!localShift||localShift.id!==serverShift.id){
+        setActiveShift(serverShift);
+        updateShiftBar();updateHomeStats();renderProdBagList();
+      }
+    } else if(!serverShift&&localShift){
+      setActiveShift(null);
+      updateShiftBar();updateHomeStats();
+    }
+  }catch(e){console.warn('Active shift server sync failed:',e.message);}
+}
 
 function toggleShift(){
   const active=getActiveShift();
@@ -657,6 +685,7 @@ function updateShiftBar(){
   }
 }
 setInterval(updateShiftBar,30000);
+setInterval(function(){syncActiveShiftFromServer();},30000);
 
 // ════════════ START SHIFT ════════════
 function openStartShift(){
@@ -715,6 +744,7 @@ function openStartShift(){
     const notes=document.getElementById('ss-notes').value.trim();
     const shift={id:genId(),startTime:Date.now(),shiftType:window._ssShift,crew:window._ssCrew,feedId:feedId,notes:notes,bags:[]};
     setActiveShift(shift);
+    pushActiveShiftToServer(shift);
     closeOverlay('overlay-start-shift');
     updateShiftBar();
     updateHomeStats();
@@ -733,6 +763,7 @@ function endShift(){
   db.shifts.push(active);
   saveDB(db);
   setActiveShift(null);
+  pushActiveShiftToServer(null);
   updateShiftBar();
   openEndShiftReport(active);
 }
@@ -2205,6 +2236,7 @@ async function init(){
     try{
       showSyncStatus('⟳ Syncing with server...','var(--steel2)');
       await pullFromServer();
+      await syncActiveShiftFromServer();
     }catch(e){console.log('Auto-pull failed:',e);}
   }
 }

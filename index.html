@@ -1387,9 +1387,11 @@ function renderAdminList(items,type,el){
     else if(type==='client') meta.textContent=(item.contact||'')+(item.email?' · '+item.email:'');
     left.appendChild(title);left.appendChild(meta);
     const right=document.createElement('div');right.className='list-entry-right';
+    const editBtn=document.createElement('button');editBtn.className='btn btn-ghost btn-sm';editBtn.style.marginRight='4px';editBtn.textContent='Edit';
+    editBtn.addEventListener('click',function(){openEditAdminItem(type,item);});
     const delBtn=document.createElement('button');delBtn.className='btn btn-ghost btn-sm';delBtn.textContent='Delete';
     delBtn.addEventListener('click',function(){deleteAdminItem(type,item.id);});
-    right.appendChild(delBtn);
+    right.appendChild(editBtn);right.appendChild(delBtn);
     entry.appendChild(left);entry.appendChild(right);el.appendChild(entry);
   });
 }
@@ -1518,6 +1520,64 @@ function openAdminForm(section){
 
   const saveBtn=document.createElement('button');saveBtn.className='btn btn-gold';saveBtn.textContent='Save';
   saveBtn.addEventListener('click',function(){saveAdminItem(section);});
+  body.appendChild(saveBtn);
+  openOverlay('overlay-admin-form');
+}
+
+function openEditAdminItem(type, item){
+  const body=document.getElementById('admin-form-body'); body.innerHTML='';
+  document.getElementById('admin-form-title').textContent='Edit '+type.charAt(0).toUpperCase()+type.slice(1);
+
+  if(type==='operator'){
+    [['name','Name',item.name],['position','Position',item.position||'Operator'],['tel','Phone Number',item.tel||'']].forEach(function(f){
+      const row=document.createElement('div');row.className='fu-row';
+      const l=document.createElement('label');l.textContent=f[1];row.appendChild(l);
+      if(f[0]==='position'){
+        const sel=document.createElement('select');sel.className='fu-select';sel.id='ef_'+f[0];
+        ['Operator','Assistant','Supervisor','Plant Manager','Site Manager'].forEach(function(p){
+          const o=document.createElement('option');o.value=p;o.textContent=p;if(p===f[2])o.selected=true;sel.appendChild(o);
+        });
+        row.appendChild(sel);
+      } else {
+        const inp=document.createElement('input');inp.className='fu-input';inp.id='ef_'+f[0];inp.value=f[2];row.appendChild(inp);
+      }
+      body.appendChild(row);
+    });
+  } else if(type==='client'){
+    [['name','Company Name',item.name||''],['contact','Contact Person',item.contact||''],['email','Email',item.email||''],['address','Address',item.address||'']].forEach(function(f){
+      const row=document.createElement('div');row.className='fu-row';
+      const l=document.createElement('label');l.textContent=f[1];row.appendChild(l);
+      const inp=document.createElement('input');inp.className='fu-input';inp.id='ef_'+f[0];inp.value=f[2];row.appendChild(inp);
+      body.appendChild(row);
+    });
+  }
+
+  const saveBtn=document.createElement('button');saveBtn.className='btn btn-gold';saveBtn.textContent='Save Changes';
+  saveBtn.addEventListener('click',function(){
+    const settings=getSettings();
+    const newName=document.getElementById('ef_name')?.value.trim();
+    if(!newName){alert('Name is required.');return;}
+    if(type==='operator'){
+      const idx=settings.operators.findIndex(function(o){return o.id===item.id;});
+      if(idx>=0){
+        settings.operators[idx].name=newName;
+        settings.operators[idx].position=document.getElementById('ef_position')?.value||item.position;
+        settings.operators[idx].tel=document.getElementById('ef_tel')?.value||'';
+      }
+    } else if(type==='client'){
+      const idx=settings.clients.findIndex(function(c){return c.id===item.id;});
+      if(idx>=0){
+        settings.clients[idx].name=newName;
+        settings.clients[idx].contact=document.getElementById('ef_contact')?.value||'';
+        settings.clients[idx].email=document.getElementById('ef_email')?.value||'';
+        settings.clients[idx].address=document.getElementById('ef_address')?.value||'';
+      }
+    }
+    saveSettings(settings);
+    if(getServerUrl()) syncToServer();
+    closeOverlay('overlay-admin-form');
+    showAdminSection(type+'s');
+  });
   body.appendChild(saveBtn);
   openOverlay('overlay-admin-form');
 }
@@ -3348,15 +3408,16 @@ function parseTagText(rawText){
       if(tMatch){ extracted.time = tMatch[1].padStart(2,'0')+':'+tMatch[2]; return; }
     }
 
-    // ── Operator: match against known operator names ──────────────────────────
-    if(!extracted.operator){
-      var opMatch = ops.find(function(op){
-        // Check if the OCR line contains the operator name or vice versa
-        var opClean = op.replace(/\s+/g,'');
-        var lineClean = clean.replace(/\s+/g,'');
-        return lineClean===opClean || lineClean.includes(opClean) || opClean.includes(lineClean);
+    // ── Operator: match against registered names ONLY using edit distance ───────
+    if(!extracted.operator && clean.length>=3 && clean.length<=20 && /^[A-Z\s]+$/.test(clean)){
+      var bestOp=null, bestDist=999;
+      ops.forEach(function(op){
+        var dist=editDistance(clean.replace(/\s/g,''), op.replace(/\s/g,'').toUpperCase());
+        // Allow up to 2 character edits for short names, 3 for longer
+        var threshold = op.length<=5 ? 2 : 3;
+        if(dist<=threshold && dist<bestDist){ bestDist=dist; bestOp=op; }
       });
-      if(opMatch){ extracted.operator = opMatch; return; }
+      if(bestOp){ extracted.operator=bestOp; return; }
     }
 
     // ── Material/Product: match against known product names ───────────────────
@@ -3388,6 +3449,22 @@ function similarity(a, b){
   var matches=0;
   for(var i=0;i<shorter.length;i++){ if(longer.includes(shorter[i])) matches++; }
   return matches/longer.length;
+}
+
+// Levenshtein edit distance — counts insertions, deletions, substitutions
+function editDistance(a, b){
+  if(!a) return b?b.length:0;
+  if(!b) return a.length;
+  var m=a.length, n=b.length;
+  var dp=[];
+  for(var i=0;i<=m;i++){ dp[i]=[i]; }
+  for(var j=0;j<=n;j++){ dp[0][j]=j; }
+  for(var i=1;i<=m;i++){
+    for(var j=1;j<=n;j++){
+      dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+    }
+  }
+  return dp[m][n];
 }
 
 function applyScanResults(extracted, statusEl){
@@ -3494,32 +3571,104 @@ function applyScanResults(extracted, statusEl){
     }
   }
 
-  // Show results
-  if(statusEl){
-    if(matched.length > 0){
-      statusEl.style.color='#22c55e';
-      statusEl.textContent='✅ Scanned: '+matched.join(' · ');
+  // Always show confirmation card — never auto-advance
+  showScanConfirmCard(statusEl);
+}
+
+function showScanConfirmCard(statusEl){
+  var body = document.getElementById('submit-bag-body');
+  if(!body) return;
+  // Clear the scan card and replace with confirmation
+  body.innerHTML='';
+
+  var card = document.createElement('div');
+  card.style.cssText='background:linear-gradient(135deg,#1a2535,#1E2330);border:1px solid rgba(240,165,0,0.4);border-radius:12px;padding:16px;margin-bottom:14px;';
+  card.innerHTML='<div style="font-size:13px;font-weight:700;color:#f0a500;margin-bottom:12px;">📋 Scanned Tag — Is this correct?</div>';
+
+  var ops = (getSettings().operators||[]);
+
+  // Each field as an editable row
+  function editRow(label, value, inputId, type, options){
+    var row=document.createElement('div');
+    row.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.07);';
+    var lbl=document.createElement('div');lbl.style.cssText='font-size:11px;color:var(--muted);width:80px;flex-shrink:0;';lbl.textContent=label;
+    var valEl;
+    if(type==='select'&&options){
+      valEl=document.createElement('select');valEl.className='fu-select';valEl.id=inputId;
+      valEl.style.cssText='flex:1;margin-left:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:white;font-size:14px;';
+      // Blank option first
+      var blank=document.createElement('option');blank.value='';blank.textContent='— select —';valEl.appendChild(blank);
+      options.forEach(function(o){
+        var opt=document.createElement('option');opt.value=o;opt.textContent=o;if(o===value)opt.selected=true;valEl.appendChild(opt);
+      });
     } else {
-      statusEl.style.color='#f59e0b';
-      statusEl.textContent='⚠️ Tag scanned but no fields recognised — fill in manually';
+      valEl=document.createElement('input');valEl.id=inputId;
+      valEl.style.cssText='flex:1;margin-left:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:white;font-size:15px;font-weight:700;';
+      valEl.type=type||'text';valEl.value=value||'';
+      if(type==='number'){valEl.inputMode='decimal';}
     }
+    row.appendChild(lbl);row.appendChild(valEl);card.appendChild(row);
   }
 
-  // If we have all critical fields, jump to summary (step 4)
-  var hasAll = _bagData.feedId && _bagData.chute && _bagData.operator && _bagData.weight > 0;
-  if(hasAll){
-    // Short delay so user can see the success message
-    setTimeout(function(){
-      _bagStep = 4; // jump to quality check/summary
-      renderBagStep();
-    }, 1200);
-  } else {
-    // Partial fill — advance as far as we can
-    if(_bagData.feedId) _bagStep = Math.max(_bagStep, 1);
-    if(_bagData.feedId && _bagData.chute) _bagStep = Math.max(_bagStep, 2);
-    if(_bagData.feedId && _bagData.chute && _bagData.operator) _bagStep = Math.max(_bagStep, 3);
-    setTimeout(function(){ renderBagStep(); }, 1000);
+  editRow('Operator', _bagData.operator||'', 'sc-operator', 'select', ops.map(function(o){return o.name;}));
+  editRow('Chute', _bagData.chute||'', 'sc-chute', 'select', ['1','2','3','4','5','6','BH1','BH2']);
+  editRow('Weight', _bagData.weight||'', 'sc-weight', 'number');
+  editRow('Feed', _bagData.feedName||'', 'sc-feed', 'text');
+  editRow('Product', _bagData.productName||'', 'sc-product', 'text');
+
+  body.appendChild(card);
+
+  // Warning if anything is missing
+  var missing=[];
+  if(!_bagData.operator) missing.push('operator');
+  if(!_bagData.chute) missing.push('chute');
+  if(!_bagData.weight) missing.push('weight');
+  if(missing.length){
+    var warn=document.createElement('div');
+    warn.style.cssText='color:#f59e0b;font-size:12px;margin-bottom:10px;padding:8px;background:rgba(245,158,11,0.1);border-radius:6px;';
+    warn.textContent='⚠️ Could not read: '+missing.join(', ')+' — please fill in above';
+    body.appendChild(warn);
   }
+
+  // Confirm button
+  var confirmBtn=document.createElement('button');
+  confirmBtn.className='btn btn-gold';confirmBtn.style.cssText='width:100%;margin-bottom:8px;font-size:16px;padding:14px;';
+  confirmBtn.textContent='✅ Confirm & Continue';
+  confirmBtn.addEventListener('click',function(){
+    // Read back values from the confirmation form
+    var opEl=document.getElementById('sc-operator');
+    var chuteEl=document.getElementById('sc-chute');
+    var weightEl=document.getElementById('sc-weight');
+    var feedEl=document.getElementById('sc-feed');
+    var prodEl=document.getElementById('sc-product');
+
+    if(opEl&&opEl.value) _bagData.operator=opEl.value;
+    if(chuteEl&&chuteEl.value){
+      _bagData.chute=chuteEl.value;
+      // Re-lookup product from chute map if chute changed
+      var chuteMap=getChuteMap();
+      if(_bagData.feedId){
+        var cKey=_bagData.feedId+'_'+_bagData.chute;
+        if(chuteMap[cKey]){ _bagData.productId=chuteMap[cKey].productId; _bagData.productName=chuteMap[cKey].productName; }
+      }
+    }
+    if(weightEl&&weightEl.value) _bagData.weight=parseFloat(weightEl.value)||0;
+    if(prodEl&&prodEl.value) _bagData.productName=prodEl.value;
+
+    if(!_bagData.operator){alert('Please select an operator.');return;}
+    if(!_bagData.chute){alert('Please select a chute.');return;}
+    if(!_bagData.weight||_bagData.weight<=0){alert('Please enter the weight.');return;}
+
+    _bagStep=4; renderBagStep();
+  });
+  body.appendChild(confirmBtn);
+
+  // Manual entry option
+  var manualBtn=document.createElement('button');
+  manualBtn.className='btn btn-ghost';manualBtn.style.cssText='width:100%;';
+  manualBtn.textContent='← Scan Again / Manual Entry';
+  manualBtn.addEventListener('click',function(){ _bagStep=0; renderBagStep(); });
+  body.appendChild(manualBtn);
 }
 
 </script>

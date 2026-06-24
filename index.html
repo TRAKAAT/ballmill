@@ -169,6 +169,7 @@ tr:last-child td{border-bottom:none;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
 </style>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
 <div id="app">
@@ -798,6 +799,38 @@ function renderBagStep(){
   body.appendChild(title);
 
   if(_bagStep===0){
+    // ── SCAN TAG BUTTON ──────────────────────────────────────────────────────────
+    const scanCard=document.createElement('div');
+    scanCard.style.cssText='background:linear-gradient(135deg,#1a2535,#1E2330);border:1px solid rgba(240,165,0,0.3);border-radius:12px;padding:16px;margin-bottom:16px;text-align:center;';
+    scanCard.innerHTML='<div style="font-size:24px;margin-bottom:6px;">📷</div>'
+      +'<div style="font-size:15px;font-weight:700;color:#f0a500;margin-bottom:4px;">Scan Bag Tag</div>'
+      +'<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Take a photo of the tag — fields will fill automatically</div>';
+    const scanBtn=document.createElement('button');
+    scanBtn.className='btn btn-gold';scanBtn.style.cssText='width:100%;font-size:15px;padding:12px;';
+    scanBtn.textContent='📷 Open Camera & Scan';
+    scanBtn.addEventListener('click',function(){ triggerTagScan(); });
+    scanCard.appendChild(scanBtn);
+    // Hidden state for scan result
+    const scanStatus=document.createElement('div');
+    scanStatus.id='scan-status';scanStatus.style.cssText='font-size:12px;margin-top:8px;display:none;';
+    scanCard.appendChild(scanStatus);
+    body.appendChild(scanCard);
+    // File input (outside modal to avoid closing issues)
+    var existingInput=document.getElementById('tag-scan-input');
+    if(!existingInput){
+      existingInput=document.createElement('input');
+      existingInput.type='file';existingInput.id='tag-scan-input';
+      existingInput.accept='image/*';existingInput.setAttribute('capture','environment');
+      existingInput.style.cssText='display:none;position:fixed;top:-9999px;';
+      existingInput.addEventListener('change',function(e){ handleTagScan(e); });
+      document.body.appendChild(existingInput);
+    }
+
+    const divider=document.createElement('div');
+    divider.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:14px;color:var(--muted);font-size:12px;';
+    divider.innerHTML='<div style="flex:1;height:1px;background:var(--border);"></div>or select manually<div style="flex:1;height:1px;background:var(--border);"></div>';
+    body.appendChild(divider);
+
     // Feed material
     const fms=getFeedMaterials();
     if(fms.length===0){
@@ -3192,6 +3225,303 @@ async function psrDownloadExcel(){
 (function(){
   try{psrSetRange('week');}catch(e){}
 })();
+
+// ════════════════════════════════════════════════════════
+// BAG TAG SCANNER — Claude Vision OCR
+// ════════════════════════════════════════════════════════
+var _scanPhotoData = null;
+var _cameraActiveScan = false;
+
+function triggerTagScan(){
+  _cameraActiveScan = true;
+  var inp = document.getElementById('tag-scan-input');
+  if(inp){ inp.value=''; inp.click(); }
+}
+
+function handleTagScan(event){
+  _cameraActiveScan = false;
+  var file = event.target.files[0];
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e){
+    _scanPhotoData = e.target.result;
+    processTagImage(_scanPhotoData);
+  };
+  reader.readAsDataURL(file);
+}
+
+async function processTagImage(dataUrl){
+  var statusEl = document.getElementById('scan-status');
+  if(statusEl){ statusEl.style.display=''; statusEl.style.color='#f0a500'; statusEl.textContent='🔍 Reading tag... (first scan loads OCR engine)'; }
+
+  try {
+    // Run Tesseract OCR on the image
+    var result = await Tesseract.recognize(dataUrl, 'eng', {
+      logger: function(m){
+        if(m.status==='recognizing text' && statusEl){
+          statusEl.textContent = '🔍 Reading... '+Math.round(m.progress*100)+'%';
+        }
+      }
+    });
+
+    var rawText = result.data.text;
+    console.log('Tesseract raw:', rawText);
+
+    if(statusEl) statusEl.textContent = '🔍 Parsing fields...';
+
+    // Parse the raw OCR text into structured fields
+    var extracted = parseTagText(rawText);
+    console.log('Parsed:', extracted);
+
+    applyScanResults(extracted, statusEl);
+
+  } catch(err){
+    console.error('OCR error:', err);
+    if(statusEl){
+      statusEl.style.color='#ef4444';
+      statusEl.textContent='⚠️ OCR failed: '+err.message+' — fill in manually';
+    }
+  }
+}
+
+function parseTagText(rawText){
+  // Clean up OCR output — Tesseract often adds noise
+  var lines = rawText.split('\n').concat(rawText.split('\r'))
+
+    .map(function(l){ return l.trim().toUpperCase().replace(/[^A-Z0-9.:\/\s-]/g,'').trim(); })
+    .filter(function(l){ return l.length > 0; });
+
+  console.log('Lines:', lines);
+
+  var extracted = {operator:null, chute:null, material:null, weight:null, date:null, time:null};
+
+  // Get all known operators, products, chutes to help matching
+  var ops = (getSettings().operators||[]).map(function(o){return o.name.toUpperCase();});
+  var chuteMap = getChuteMap();
+  var knownProducts = [];
+  Object.values(chuteMap).forEach(function(v){ if(v&&v.productName) knownProducts.push(v.productName.toUpperCase()); });
+
+  lines.forEach(function(line){
+    var clean = line.replace(/\s+/g,' ').trim();
+
+    // ── Weight: line containing digits + KG or a large number (500-9999) ──────
+    if(!extracted.weight){
+      // Match patterns like: 1202.5 KG, 1202.5KG, 1 202.5 KG (OCR sometimes adds spaces in numbers)
+      var wMatch = clean.match(/(\d[\d\s]*\.?\d*)\s*K\s*G/);
+      if(wMatch){
+        var wStr = wMatch[1].replace(/\s/g,''); // remove OCR-inserted spaces in number
+        var w = parseFloat(wStr);
+        if(w > 50 && w < 5000){ extracted.weight = w; return; }
+      }
+      // Bare large number on its own line (no KG suffix)
+      var numOnly = clean.match(/^(\d{3,4}\.?\d*)$/);
+      if(numOnly){
+        var w2 = parseFloat(numOnly[1]);
+        if(w2 > 50 && w2 < 5000){ extracted.weight = w2; return; }
+      }
+    }
+
+    // ── Chute: line containing CHUTE or BH ───────────────────────────────────
+    if(!extracted.chute){
+      var cMatch = clean.match(/CHUT[E]?\s*([1-6])/);
+      if(cMatch){ extracted.chute = cMatch[1]; return; }
+      var bhMatch = clean.match(/B\s*H\s*([12])/);
+      if(bhMatch){ extracted.chute = 'BH'+bhMatch[1]; return; }
+      // Just a single digit 1-6 on its own line
+      if(/^[1-6]$/.test(clean)){ extracted.chute = clean; return; }
+    }
+
+    // ── Date: line containing date pattern ────────────────────────────────────
+    if(!extracted.date){
+      var dMatch = clean.match(/(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{2,4})/);
+      if(dMatch){
+        var day=dMatch[1].padStart(2,'0'), mon=dMatch[2].padStart(2,'0'), yr=dMatch[3];
+        if(yr.length===2) yr='20'+yr;
+        extracted.date = yr+'-'+mon+'-'+day;
+        return;
+      }
+    }
+
+    // ── Time: line matching HH:MM ─────────────────────────────────────────────
+    if(!extracted.time){
+      var tMatch = clean.match(/^(\d{1,2})\s*:\s*(\d{2})$/);
+      if(tMatch){ extracted.time = tMatch[1].padStart(2,'0')+':'+tMatch[2]; return; }
+    }
+
+    // ── Operator: match against known operator names ──────────────────────────
+    if(!extracted.operator){
+      var opMatch = ops.find(function(op){
+        // Check if the OCR line contains the operator name or vice versa
+        var opClean = op.replace(/\s+/g,'');
+        var lineClean = clean.replace(/\s+/g,'');
+        return lineClean===opClean || lineClean.includes(opClean) || opClean.includes(lineClean);
+      });
+      if(opMatch){ extracted.operator = opMatch; return; }
+    }
+
+    // ── Material/Product: match against known product names ───────────────────
+    if(!extracted.material){
+      var prodMatch = knownProducts.find(function(p){
+        var pClean = p.replace(/[-\s]/g,'');
+        var lClean = clean.replace(/[-\s]/g,'');
+        return lClean===pClean || lClean.includes(pClean) || pClean.includes(lClean)
+          || similarity(lClean, pClean) > 0.7;
+      });
+      if(prodMatch){ extracted.material = prodMatch; return; }
+    }
+
+    // ── Fallback operator: first long alphabetic line (likely a name) ─────────
+    if(!extracted.operator && /^[A-Z]{3,}$/.test(clean) && clean.length <= 15){
+      extracted.operator = clean;
+    }
+  });
+
+  return extracted;
+}
+
+// Simple character similarity score for fuzzy matching OCR errors
+function similarity(a, b){
+  if(!a||!b) return 0;
+  var longer = a.length>b.length?a:b;
+  var shorter = a.length>b.length?b:a;
+  if(longer.length===0) return 1;
+  var matches=0;
+  for(var i=0;i<shorter.length;i++){ if(longer.includes(shorter[i])) matches++; }
+  return matches/longer.length;
+}
+
+function applyScanResults(extracted, statusEl){
+  var settings = getSettings();
+  var fms = getFeedMaterials();
+  var ops = settings.operators || [];
+  var chuteMap = getChuteMap();
+  var matched = [];
+
+  // Store date/time from tag (informational, bag timestamp uses current time)
+  if(extracted.time) _bagData.scannedTime = extracted.time;
+  if(extracted.date) _bagData.scannedDate = extracted.date;
+
+  // ── 1. Operator — fuzzy match, then use as-is ─────────────────────────────
+  if(extracted.operator){
+    var opRaw = extracted.operator.trim();
+    var opLower = opRaw.toLowerCase();
+    // Try contains match both ways
+    var matchedOp = ops.find(function(o){
+      var n = o.name.toLowerCase();
+      return n===opLower || n.includes(opLower) || opLower.includes(n);
+    });
+    if(matchedOp){ _bagData.operator=matchedOp.name; matched.push('Operator: '+matchedOp.name); }
+    else { _bagData.operator=opRaw; matched.push('Operator: '+opRaw+' (not in list)'); }
+  }
+
+  // ── 2. Weight — straightforward ───────────────────────────────────────────
+  if(extracted.weight && parseFloat(extracted.weight) > 0){
+    _bagData.weight = parseFloat(extracted.weight);
+    matched.push('Weight: '+_bagData.weight+' kg');
+  }
+
+  // ── 3. Chute — primary lookup key ─────────────────────────────────────────
+  // Chute number is the most reliable field. Once we have chute + feed,
+  // we get the product name directly from the chute map (not from the tag).
+  var chuteStr = null;
+  if(extracted.chute){
+    chuteStr = String(extracted.chute).trim().toUpperCase().replace(/^CHUTE\s*/,'');
+    _bagData.chute = chuteStr;
+    matched.push('Chute: '+chuteStr);
+  }
+
+  // ── 4. Feed material — try to identify from active shift first ────────────
+  var activeShift = getActiveShift();
+  if(activeShift && activeShift.feedId && !_bagData.feedId){
+    var fm0 = fms.find(function(f){return f.id===activeShift.feedId;});
+    if(fm0){ _bagData.feedId=fm0.id; _bagData.feedName=fm0.name; matched.push('Feed: '+fm0.name+' (from shift)'); }
+  }
+
+  // ── 5. Product from chute map (authoritative — ignore what's written on tag) ─
+  // If we have feed + chute, look up the product. This is always correct.
+  if(_bagData.feedId && chuteStr){
+    var cKey = _bagData.feedId+'_'+chuteStr;
+    if(chuteMap[cKey]){
+      _bagData.productId = chuteMap[cKey].productId;
+      _bagData.productName = chuteMap[cKey].productName;
+      matched.push('Product: '+_bagData.productName+' (from chute map)');
+    }
+  }
+
+  // ── 6. Fallback: if no feed yet, try matching via chute map product names ──
+  // The handwritten product name is only used as a hint when feed is unknown
+  if(!_bagData.feedId && extracted.material){
+    var matClean = extracted.material.toLowerCase().replace(/[-_\s]/g,'');
+    var bestFeedId=null, bestChute=null, bestScore=0;
+    Object.keys(chuteMap).forEach(function(key){
+      var val=chuteMap[key];
+      if(!val||!val.productName) return;
+      var pClean = val.productName.toLowerCase().replace(/[-_\s]/g,'');
+      // Score the match
+      var score=0;
+      if(pClean===matClean) score=3;
+      else if(pClean.includes(matClean)||matClean.includes(pClean)) score=2;
+      else {
+        // Token overlap
+        var toks=matClean.split('');
+        var matched2=toks.filter(function(c){return pClean.includes(c);});
+        score=matched2.length/Math.max(toks.length,pClean.length);
+      }
+      if(score>bestScore){ bestScore=score; var parts=key.split('_'); bestFeedId=parts[0]; bestChute=parts.slice(1).join('_'); }
+    });
+    if(bestScore>0.5&&bestFeedId){
+      var fm3=fms.find(function(f){return f.id===bestFeedId;});
+      if(fm3){ _bagData.feedId=fm3.id; _bagData.feedName=fm3.name; matched.push('Feed: '+fm3.name+' (from product hint)'); }
+      // Only use hinted chute if we didn't already get one from OCR
+      if(!chuteStr&&bestChute){ _bagData.chute=bestChute; matched.push('Chute: '+bestChute+' (from product hint)'); }
+      // Lookup product from map with confirmed feed+chute
+      var cKey5=_bagData.feedId+'_'+(_bagData.chute||'');
+      if(chuteMap[cKey5]){
+        _bagData.productId=chuteMap[cKey5].productId;
+        _bagData.productName=chuteMap[cKey5].productName;
+        matched.push('Product: '+_bagData.productName+' (from chute map)');
+      }
+    }
+  }
+
+  // ── 7. Last resort: try feed name match directly ──────────────────────────
+  if(!_bagData.feedId && extracted.material){
+    var mLow=extracted.material.toLowerCase();
+    var fm4=fms.find(function(f){return f.name.toLowerCase().includes(mLow)||mLow.includes(f.name.toLowerCase());});
+    if(fm4){
+      _bagData.feedId=fm4.id; _bagData.feedName=fm4.name; matched.push('Feed: '+fm4.name);
+      if(_bagData.chute){ var cKey6=_bagData.feedId+'_'+_bagData.chute; if(chuteMap[cKey6]){ _bagData.productId=chuteMap[cKey6].productId; _bagData.productName=chuteMap[cKey6].productName; } }
+    }
+  }
+
+  // Show results
+  if(statusEl){
+    if(matched.length > 0){
+      statusEl.style.color='#22c55e';
+      statusEl.textContent='✅ Scanned: '+matched.join(' · ');
+    } else {
+      statusEl.style.color='#f59e0b';
+      statusEl.textContent='⚠️ Tag scanned but no fields recognised — fill in manually';
+    }
+  }
+
+  // If we have all critical fields, jump to summary (step 4)
+  var hasAll = _bagData.feedId && _bagData.chute && _bagData.operator && _bagData.weight > 0;
+  if(hasAll){
+    // Short delay so user can see the success message
+    setTimeout(function(){
+      _bagStep = 4; // jump to quality check/summary
+      renderBagStep();
+    }, 1200);
+  } else {
+    // Partial fill — advance as far as we can
+    if(_bagData.feedId) _bagStep = Math.max(_bagStep, 1);
+    if(_bagData.feedId && _bagData.chute) _bagStep = Math.max(_bagStep, 2);
+    if(_bagData.feedId && _bagData.chute && _bagData.operator) _bagStep = Math.max(_bagStep, 3);
+    setTimeout(function(){ renderBagStep(); }, 1000);
+  }
+}
+
 </script>
 </body>
 </html>

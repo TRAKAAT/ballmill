@@ -1512,9 +1512,9 @@ function renderSalesList(){
   sales.forEach(function(s){
     const entry=document.createElement('div');entry.className='list-entry';
     const left=document.createElement('div');left.className='list-entry-left';
-    const title=document.createElement('div');title.className='list-entry-title';title.textContent=s.clientName+' · '+s.totalWeight.toLocaleString()+' kg';
+    const title=document.createElement('div');title.className='list-entry-title';title.textContent=(s.clientName||'Unknown')+' · '+((s.totalWeight||0).toLocaleString())+' kg';
     const meta=document.createElement('div');meta.className='list-entry-meta';
-    meta.textContent=s.date+' · '+s.truck+' · '+s.lines.map(function(l){return l.productName;}).join(', ');
+    meta.textContent=(s.date||'')+' · '+(s.truck||'')+' · '+((s.lines||[]).map(function(l){return l.productName;}).join(', '));
     left.appendChild(title);left.appendChild(meta);
     const right=document.createElement('div');right.className='list-entry-right';
     const noteBtn=document.createElement('button');noteBtn.className='btn btn-ghost btn-sm';noteBtn.textContent='📄 Note';

@@ -421,7 +421,7 @@ async function shareShiftReport(shift, db){
   <div class="screen-title">📦 Stock</div>
   <div class="screen-sub">Current inventory by chute & product</div>
   <div id="stock-feed-filter" class="chip-row"></div>
-  <button class="btn btn-ghost" style="margin-bottom:10px;" id="stock-report-btn">📤 Share Stock Report</button>
+  <button class="btn btn-gold" style="margin-bottom:12px;width:100%;" id="stock-report-btn">📊 Monthly Report &amp; Share</button>
   <div id="stock-content"><div class="empty">No stock data yet</div></div>
 </div>
 </div>
@@ -1156,9 +1156,10 @@ function renderStock(){
   const filterEl=document.getElementById('stock-feed-filter');
   const contentEl=document.getElementById('stock-content');
   filterEl.innerHTML='';contentEl.innerHTML='';
-  if(!fms.length){contentEl.innerHTML='<div class="empty">No feed materials registered yet</div>';return;}
+  // Wire up report button regardless of feed materials
   var _srBtn=document.getElementById('stock-report-btn');if(_srBtn){_srBtn.onclick=function(){openStockReport();};}
   var _srClose=document.getElementById('close-stock-report');if(_srClose){_srClose.onclick=function(){document.getElementById('overlay-stock-report').classList.remove('open');};}
+  if(!fms.length){contentEl.innerHTML='<div class="empty">No feed materials registered yet</div>';return;}
   const sortedFms=fms.slice().sort(function(a,b){return a.name.localeCompare(b.name);});
   let activeFeed=window._stockFeed||sortedFms[0].id;
   sortedFms.forEach(function(fm){

@@ -321,6 +321,120 @@ async function shareShiftReport(shift, db){
   }
 }
 
+
+// ════════════ EDIT SALE ════════════
+function openEditSale(sale){
+  var pw=prompt('Enter password to edit sale:');
+  if(pw!=='2424'){alert('Incorrect password');return;}
+  var body=document.getElementById('edit-sale-body');
+  if(!body) return;
+  body.innerHTML='';
+  document.getElementById('close-edit-sale').onclick=function(){
+    document.getElementById('overlay-edit-sale').classList.remove('open');
+  };
+
+  // Date
+  var r1=document.createElement('div');r1.className='form-group';
+  r1.innerHTML='<label class="form-label">Date</label><input class="form-input" id="es-date" type="date" value="'+sale.date+'">';
+  body.appendChild(r1);
+
+  // Client
+  var r2=document.createElement('div');r2.className='form-group';
+  r2.innerHTML='<label class="form-label">Client</label><input class="form-input" id="es-client" type="text" value="'+(sale.clientName||'')+'">'; 
+  body.appendChild(r2);
+
+  // Truck
+  var r3=document.createElement('div');r3.className='form-group';
+  r3.innerHTML='<label class="form-label">Truck Reg</label><input class="form-input" id="es-truck" type="text" value="'+(sale.truck||'')+'">'; 
+  body.appendChild(r3);
+
+  // Lines — editable weights per product
+  var linesHdr=document.createElement('div');linesHdr.className='sec-hdr';linesHdr.textContent='Product Lines';
+  body.appendChild(linesHdr);
+
+  var linesDiv=document.createElement('div');linesDiv.id='es-lines';
+  (sale.lines||[]).forEach(function(line,i){
+    var row=document.createElement('div');
+    row.style.cssText='background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:8px;';
+    row.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--gold);margin-bottom:8px;">'+line.productName+'</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+      +'<div><label class="form-label">Bags</label>'
+      +'<input class="form-input" id="es-line-bags-'+i+'" type="number" value="'+(line.bags||0)+'"></div>'
+      +'<div><label class="form-label">Total Weight (kg)</label>'
+      +'<input class="form-input" id="es-line-weight-'+i+'" type="number" step="0.1" value="'+(line.totalWeight||0)+'"></div>'
+      +'</div>';
+    row.querySelector('#es-line-weight-'+i).addEventListener('input', updateEsTotal);
+    linesDiv.appendChild(row);
+  });
+  body.appendChild(linesDiv);
+
+  // Total display
+  var totDiv=document.createElement('div');
+  totDiv.id='es-total-display';
+  totDiv.style.cssText='background:var(--surface);border-radius:8px;padding:12px;margin-bottom:14px;text-align:center;';
+  body.appendChild(totDiv);
+  updateEsTotal();
+
+  // Notes
+  var r4=document.createElement('div');r4.className='form-group';
+  r4.innerHTML='<label class="form-label">Notes</label><textarea class="form-input" id="es-notes" rows="2" style="resize:vertical;">'+(sale.notes||sale.driver||'')+'</textarea>';
+  body.appendChild(r4);
+
+  // Save button
+  var saveBtn=document.createElement('button');
+  saveBtn.className='btn btn-gold';saveBtn.style.cssText='width:100%;margin-top:4px;';
+  saveBtn.textContent='💾 Save Changes';
+  saveBtn.addEventListener('click',function(){
+    var db=getDB();
+    var idx=db.sales.findIndex(function(s){return s.id===sale.id;});
+    if(idx===-1){alert('Sale not found');return;}
+    // Update fields
+    db.sales[idx].date=document.getElementById('es-date').value||sale.date;
+    db.sales[idx].clientName=document.getElementById('es-client').value||sale.clientName;
+    db.sales[idx].truck=document.getElementById('es-truck').value||sale.truck;
+    db.sales[idx].notes=document.getElementById('es-notes').value;
+    // Update lines
+    var newTotal=0;
+    (sale.lines||[]).forEach(function(line,i){
+      var wEl=document.getElementById('es-line-weight-'+i);
+      var bEl=document.getElementById('es-line-bags-'+i);
+      if(wEl){
+        var w=parseFloat(wEl.value)||0;
+        db.sales[idx].lines[i].totalWeight=w;
+        newTotal+=w;
+      }
+      if(bEl) db.sales[idx].lines[i].bags=parseInt(bEl.value)||0;
+    });
+    db.sales[idx].totalWeight=newTotal;
+    saveDB(db);
+    // Sync to server
+    if(getServerUrl()){
+      fetch(getServerUrl()+'/sales',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(db.sales[idx])
+      }).then(function(){showSyncStatus('✅ Sale updated','var(--green)');})
+        .catch(function(){showSyncStatus('⚠ Saved locally','var(--amber)');});
+    }
+    document.getElementById('overlay-edit-sale').classList.remove('open');
+    renderSalesList();
+    showSyncStatus('✅ Sale updated','var(--green)');
+  });
+  body.appendChild(saveBtn);
+  document.getElementById('overlay-edit-sale').classList.add('open');
+}
+
+function updateEsTotal(){
+  var el=document.getElementById('es-total-display');
+  if(!el) return;
+  var total=0;
+  document.querySelectorAll('[id^="es-line-weight-"]').forEach(function(inp){
+    total+=parseFloat(inp.value)||0;
+  });
+  el.innerHTML='<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Total Weight</div>'
+    +'<div style="font-size:24px;font-weight:800;color:var(--gold);">'+total.toLocaleString()+' kg</div>';
+}
+
 </script>
 </head>
 <body>
@@ -433,6 +547,17 @@ async function shareShiftReport(shift, db){
       <button class="modal-close" id="close-stock-report">✕</button>
     </div>
     <div id="stock-report-body"></div>
+  </div>
+</div>
+
+<!-- Edit Sale Overlay -->
+<div class="overlay" id="overlay-edit-sale">
+  <div class="modal-sheet" style="max-height:90dvh;overflow-y:auto;">
+    <div class="modal-header">
+      <div class="modal-title">Edit Sale</div>
+      <button class="modal-close" id="close-edit-sale">✕</button>
+    </div>
+    <div id="edit-sale-body"></div>
   </div>
 </div>
 
@@ -1384,9 +1509,11 @@ function renderSalesList(){
     meta.textContent=s.date+' · '+s.truck+' · '+s.lines.map(function(l){return l.productName;}).join(', ');
     left.appendChild(title);left.appendChild(meta);
     const right=document.createElement('div');right.className='list-entry-right';
-    const btn=document.createElement('button');btn.className='btn btn-ghost btn-sm';btn.textContent='📄 Note';
-    btn.addEventListener('click',function(){generateDeliveryNote(s);});
-    right.appendChild(btn);
+    const noteBtn=document.createElement('button');noteBtn.className='btn btn-ghost btn-sm';noteBtn.textContent='📄 Note';
+    noteBtn.addEventListener('click',function(){generateDeliveryNote(s);});
+    const editBtn=document.createElement('button');editBtn.className='btn btn-ghost btn-sm';editBtn.style.marginLeft='6px';editBtn.textContent='✏️ Edit';
+    (function(sale){editBtn.addEventListener('click',function(){openEditSale(sale);});})(s);
+    right.appendChild(noteBtn);right.appendChild(editBtn);
     entry.appendChild(left);entry.appendChild(right);
     el.appendChild(entry);
   });
@@ -1933,6 +2060,10 @@ document.getElementById('close-edit-bag').addEventListener('click',function(){cl
 
 // ════════════ SCREEN NAVIGATION ════════════
 function showScreen(id){
+  if(id==='screen-admin'){
+    var pw=prompt('Enter admin password:');
+    if(pw!=='2424'){alert('Incorrect password');return;}
+  }
   document.querySelectorAll('.screen').forEach(function(s){s.classList.remove('active');});
   document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});
   document.getElementById(id).classList.add('active');
@@ -2664,7 +2795,7 @@ function openStockReport(){
   var settings=getSettings(),fms=settings.feedMaterials||[];
   var activeFeed=window._stockFeed||(fms[0]?fms[0].id:'');
   var feedObj=fms.find(function(f){return f.id===activeFeed;})||{name:'Unknown'};
-  window._srFeedId=activeFeed;window._srFeedName=feedObj.name;window._srMode='stock';
+  window._srFeedId=activeFeed;window._srFeedName=feedObj.name;window._srMode='stock';window._srMonth=null;
   var modeRow=document.createElement('div');modeRow.style.cssText='display:flex;gap:8px;margin-bottom:16px;';
   var btnStock=document.createElement('button');btnStock.className='chip active';btnStock.textContent='📦 Current Stock';
   var btnHist=document.createElement('button');btnHist.className='chip';btnHist.textContent='📈 Total Historic';
@@ -2714,29 +2845,31 @@ function drawMonthlyReport(canvas, feedId, feedName){
   if(!months.length){months=[new Date().getFullYear()+'-'+String(new Date().getMonth()+1).padStart(2,'0')];}
   if(!window._srMonth||!monthSet[window._srMonth]) window._srMonth=months[0];
   var selMonth=window._srMonth;
-  // Month selector
+  // Month selector — dropdown
   var existingSel=document.getElementById('month-selector-row');
   if(!existingSel){
     existingSel=document.createElement('div');
     existingSel.id='month-selector-row';
-    existingSel.style.cssText='display:flex;align-items:center;gap:6px;margin-bottom:12px;flex-wrap:wrap;';
+    existingSel.style.cssText='background:var(--surface2);border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;';
     canvas.parentNode.insertBefore(existingSel,canvas);
   }
   existingSel.innerHTML='';
-  var selLabel=document.createElement('span');
-  selLabel.style.cssText='font-size:11px;color:var(--muted);white-space:nowrap;';
-  selLabel.textContent='Month:';
+  var selLabel=document.createElement('label');
+  selLabel.style.cssText='font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap;flex-shrink:0;';
+  selLabel.textContent='📅 Select Month:';
   existingSel.appendChild(selLabel);
+  var sel=document.createElement('select');
+  sel.className='form-select';sel.style.cssText='flex:1;font-size:14px;font-weight:700;';
   months.forEach(function(m){
     var parts=m.split('-');
-    var label=new Date(parseInt(parts[0]),parseInt(parts[1])-1,1).toLocaleDateString('en-ZA',{month:'short',year:'numeric'});
-    var btn=document.createElement('button');
-    btn.className='chip'+(m===selMonth?' active':'');
-    btn.style.cssText='font-size:11px;padding:4px 10px;';
-    btn.textContent=label;
-    btn.addEventListener('click',function(){window._srMonth=m;drawMonthlyReport(canvas,feedId,feedName);});
-    existingSel.appendChild(btn);
+    var label=new Date(parseInt(parts[0]),parseInt(parts[1])-1,1).toLocaleDateString('en-ZA',{month:'long',year:'numeric'});
+    var opt=document.createElement('option');
+    opt.value=m;opt.textContent=label;
+    if(m===selMonth) opt.selected=true;
+    sel.appendChild(opt);
   });
+  sel.addEventListener('change',function(){window._srMonth=sel.value;drawMonthlyReport(canvas,feedId,feedName);});
+  existingSel.appendChild(sel);
   // Data for selected month
   var selYear=parseInt(selMonth.split('-')[0]),selMon=parseInt(selMonth.split('-')[1]);
   var monthBags=allPass.filter(function(b){
@@ -2769,7 +2902,9 @@ function drawMonthlyReport(canvas, feedId, feedName){
   var totalSold=monthSoldBags.reduce(function(s,b){return s+(b.weight||0);},0);
   var totalStock=monthStockBags.reduce(function(s,b){return s+(b.weight||0);},0);
   // Layout
-  var W=680,PAD=28,LOGO_H=72,TITLE_H=88,KPI_H=100;
+  var W=680,PAD=28,LOGO_H=72,TITLE_H=88;
+  var nProdsForHeight=Object.keys(prodMap).length||1;
+  var KPI_H=100+22+Math.ceil(nProdsForHeight/4)*88;
   var PROD_H=Math.max(prodRows.length,1)*46+64;
   var SALES_H=salesBreakdown.length>0?(salesBreakdown.length*46+100):72;
   var FOOTER_H=52;
@@ -2805,10 +2940,14 @@ function drawMonthlyReport(canvas, feedId, feedName){
   ctx.fillStyle=badgeCol+'22';ctx.beginPath();ctx.roundRect(W-PAD-120,y+8,120,26,6);ctx.fill();
   ctx.strokeStyle=badgeCol+'66';ctx.lineWidth=1;ctx.beginPath();ctx.roundRect(W-PAD-120,y+8,120,26,6);ctx.stroke();
   ctx.fillStyle=badgeCol;ctx.font='bold 9px Arial';ctx.textAlign='center';ctx.fillText(badge,W-PAD-60,y+26);ctx.textAlign='left';
-  // KPIs
+  // Summary banner — totals only, simple
   var tileY=LOGO_H+TITLE_H+4;
   var tileW=(W-PAD*2-16)/3;
-  var KPIS=[{l:'Total Produced',v:totalProduced>=1000?(totalProduced/1000).toFixed(2)+'t':totalProduced.toLocaleString()+'kg',s:monthBags.length+' bags',c:'#E91E8C'},{l:'Total Sold',v:totalSold>=1000?(totalSold/1000).toFixed(2)+'t':totalSold.toLocaleString()+'kg',s:monthSoldBags.length+' bags',c:'#22C55E'},{l:'In Stock',v:totalStock>=1000?(totalStock/1000).toFixed(2)+'t':totalStock.toLocaleString()+'kg',s:monthStockBags.length+' bags',c:'#F59E0B'}];
+  var KPIS=[
+    {l:'Total Produced',v:totalProduced>=1000?(totalProduced/1000).toFixed(2)+'t':totalProduced.toLocaleString()+'kg',s:monthBags.length+' bags',c:'#E91E8C'},
+    {l:'Total Sold',v:totalSold>=1000?(totalSold/1000).toFixed(2)+'t':totalSold.toLocaleString()+'kg',s:monthSoldBags.length+' bags',c:'#22C55E'},
+    {l:'In Stock',v:totalStock>=1000?(totalStock/1000).toFixed(2)+'t':totalStock.toLocaleString()+'kg',s:monthStockBags.length+' bags',c:'#F59E0B'}
+  ];
   KPIS.forEach(function(k,i){
     var tx=PAD+i*(tileW+8);
     ctx.fillStyle=k.c+'15';ctx.beginPath();ctx.roundRect(tx,tileY,tileW,72,8);ctx.fill();
@@ -2818,6 +2957,35 @@ function drawMonthlyReport(canvas, feedId, feedName){
     ctx.fillStyle='#111';ctx.font='bold 22px Arial';ctx.fillText(k.v,tx+12,tileY+46);
     ctx.fillStyle='#aaa';ctx.font='10px Arial';ctx.fillText(k.s,tx+12,tileY+62);
   });
+  // Per-product mini summary tiles below totals — the key insight
+  var prodTileY=tileY+80;
+  var nProds=prodRows.length;
+  if(nProds>0){
+    ctx.fillStyle='#f8f8f8';ctx.fillRect(PAD-4,prodTileY-4,W-PAD*2+8,24);
+    ctx.fillStyle='#aaa';ctx.font='bold 9px Arial';ctx.fillText('PER PRODUCT SUMMARY',PAD,prodTileY+12);
+    prodTileY+=22;
+    var ptW=nProds>0?(W-PAD*2-(nProds-1)*6)/nProds:W-PAD*2;
+    ptW=Math.min(ptW,150);
+    prodRows.forEach(function(e,i){
+      var nm=e[0],d=e[1],col=COLORS[i%COLORS.length];
+      var tx=PAD+i*(ptW+6);
+      ctx.fillStyle=col+'12';ctx.beginPath();ctx.roundRect(tx,prodTileY,ptW,80,6);ctx.fill();
+      ctx.strokeStyle=col+'44';ctx.lineWidth=1;ctx.beginPath();ctx.roundRect(tx,prodTileY,ptW,80,6);ctx.stroke();
+      ctx.fillStyle=col;ctx.fillRect(tx,prodTileY,3,80);
+      // Product name
+      ctx.fillStyle='#333';ctx.font='bold 10px Arial';
+      var nm2=nm.length>14?nm.substring(0,13)+'…':nm;
+      ctx.fillText(nm2,tx+8,prodTileY+16);
+      // Produced
+      ctx.fillStyle='#777';ctx.font='8px Arial';ctx.fillText('PRODUCED',tx+8,prodTileY+30);
+      ctx.fillStyle=col;ctx.font='bold 11px Arial';
+      ctx.fillText(d.produced>=1000?(d.produced/1000).toFixed(1)+'t':d.produced.toLocaleString()+'kg',tx+8,prodTileY+43);
+      // Stock
+      ctx.fillStyle='#777';ctx.font='8px Arial';ctx.fillText('IN STOCK',tx+8,prodTileY+56);
+      ctx.fillStyle=d.stock>0?'#F59E0B':'#ccc';ctx.font='bold 11px Arial';
+      ctx.fillText(d.stock>0?(d.stock>=1000?(d.stock/1000).toFixed(1)+'t':d.stock.toLocaleString()+'kg'):'SOLD OUT',tx+8,prodTileY+69);
+    });
+  }
   // Product breakdown
   var prodY=tileY+KPI_H+4;
   ctx.fillStyle='#111';ctx.font='bold 12px Arial';ctx.fillText('Production by Product Type',PAD,prodY+16);

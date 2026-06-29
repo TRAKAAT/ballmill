@@ -322,127 +322,6 @@ async function shareShiftReport(shift, db){
 }
 
 
-// ════════════ EDIT SALE ════════════
-function openEditSale(sale){
-  // Password check via overlay — prompt() unreliable on mobile
-  var pwOverlay=document.createElement('div');
-  pwOverlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
-  pwOverlay.innerHTML='<div style="background:var(--surface);border-radius:14px;padding:24px;width:280px;text-align:center;">'
-    +'<div style="font-size:16px;font-weight:700;margin-bottom:16px;">🔒 Enter Password</div>'
-    +'<input type="password" id="edit-sale-pw" class="form-input" style="text-align:center;font-size:20px;letter-spacing:4px;margin-bottom:14px;" placeholder="••••" maxlength="10">'
-    +'<div style="display:flex;gap:8px;">'
-    +'<button id="edit-pw-cancel" class="btn btn-ghost" style="flex:1;">Cancel</button>'
-    +'<button id="edit-pw-ok" class="btn btn-gold" style="flex:1;">OK</button>'
-    +'</div></div>';
-  document.body.appendChild(pwOverlay);
-  var pwInput=pwOverlay.querySelector('#edit-sale-pw');
-  setTimeout(function(){pwInput.focus();},100);
-  pwOverlay.querySelector('#edit-pw-cancel').onclick=function(){document.body.removeChild(pwOverlay);};
-  function doEdit(){
-    var pw=pwInput.value;
-    document.body.removeChild(pwOverlay);
-    if(pw!=='2424'){alert('Incorrect password');return;}
-    _doOpenEditSale(sale);
-  }
-  pwOverlay.querySelector('#edit-pw-ok').onclick=doEdit;
-  pwInput.addEventListener('keydown',function(e){if(e.key==='Enter')doEdit();});
-}
-
-function _doOpenEditSale(sale){
-  var body=document.getElementById('edit-sale-body');
-  if(!body) return;
-  body.innerHTML='';
-  var closeBtn=document.getElementById('close-edit-sale');
-  if(closeBtn) closeBtn.onclick=function(){document.getElementById('overlay-edit-sale').classList.remove('open');};
-
-  // Date
-  var r1=document.createElement('div');r1.className='form-group';
-  r1.innerHTML='<label class="form-label">Date</label><input class="form-input" id="es-date" type="date" value="'+(sale.date||'')+'">';
-  body.appendChild(r1);
-  // Client
-  var r2=document.createElement('div');r2.className='form-group';
-  r2.innerHTML='<label class="form-label">Client</label><input class="form-input" id="es-client" type="text" value="'+(sale.clientName||'')+'">'; 
-  body.appendChild(r2);
-  // Truck
-  var r3=document.createElement('div');r3.className='form-group';
-  r3.innerHTML='<label class="form-label">Truck Reg</label><input class="form-input" id="es-truck" type="text" value="'+(sale.truck||'')+'">'; 
-  body.appendChild(r3);
-  // Lines
-  var linesHdr=document.createElement('div');linesHdr.className='sec-hdr';linesHdr.textContent='Product Lines';
-  body.appendChild(linesHdr);
-  var linesDiv=document.createElement('div');linesDiv.id='es-lines';
-  (sale.lines||[]).forEach(function(line,i){
-    var row=document.createElement('div');
-    row.style.cssText='background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:8px;';
-    // sale lines use 'weight' not 'totalWeight'
-    var lineW=line.weight||line.totalWeight||0;
-    row.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--gold);margin-bottom:8px;">'+(line.productName||'Product '+i)+'</div>'
-      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
-      +'<div><label class="form-label">Bags</label>'
-      +'<input class="form-input" id="es-line-bags-'+i+'" type="number" value="'+(line.bags||line.bagIds&&line.bagIds.length||0)+'"></div>'
-      +'<div><label class="form-label">Weight (kg)</label>'
-      +'<input class="form-input es-line-weight" id="es-line-weight-'+i+'" type="number" step="0.1" value="'+lineW+'"></div>'
-      +'</div>';
-    linesDiv.appendChild(row);
-  });
-  body.appendChild(linesDiv);
-  // Add input listeners after appending
-  body.querySelectorAll('.es-line-weight').forEach(function(inp){
-    inp.addEventListener('input',updateEsTotal);
-  });
-  // Total
-  var totDiv=document.createElement('div');totDiv.id='es-total-display';
-  totDiv.style.cssText='background:var(--surface);border-radius:8px;padding:12px;margin-bottom:14px;text-align:center;';
-  body.appendChild(totDiv);
-  updateEsTotal();
-  // Notes
-  var r4=document.createElement('div');r4.className='form-group';
-  r4.innerHTML='<label class="form-label">Notes</label><textarea class="form-input" id="es-notes" rows="2" style="resize:vertical;">'+(sale.notes||'')+'</textarea>';
-  body.appendChild(r4);
-  // Save
-  var saveBtn=document.createElement('button');
-  saveBtn.className='btn btn-gold';saveBtn.style.cssText='width:100%;margin-top:4px;';
-  saveBtn.textContent='💾 Save Changes';
-  saveBtn.addEventListener('click',function(){
-    var db=getDB();
-    var idx=db.sales.findIndex(function(s){return s.id===sale.id;});
-    if(idx===-1){alert('Sale not found');return;}
-    db.sales[idx].date=document.getElementById('es-date').value||sale.date;
-    db.sales[idx].clientName=document.getElementById('es-client').value||sale.clientName;
-    db.sales[idx].truck=document.getElementById('es-truck').value||sale.truck;
-    db.sales[idx].notes=document.getElementById('es-notes').value;
-    var newTotal=0;
-    (sale.lines||[]).forEach(function(line,i){
-      var wEl=document.getElementById('es-line-weight-'+i);
-      var bEl=document.getElementById('es-line-bags-'+i);
-      if(wEl){ var w=parseFloat(wEl.value)||0; db.sales[idx].lines[i].weight=w; db.sales[idx].lines[i].totalWeight=w; newTotal+=w; }
-      if(bEl) db.sales[idx].lines[i].bags=parseInt(bEl.value)||0;
-    });
-    db.sales[idx].totalWeight=newTotal;
-    saveDB(db);
-    if(getServerUrl()){
-      fetch(getServerUrl()+'/sales',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(db.sales[idx])})
-        .then(function(){showSyncStatus('✅ Sale updated','var(--green)');})
-        .catch(function(){showSyncStatus('⚠ Saved locally','var(--amber)');});
-    }
-    document.getElementById('overlay-edit-sale').classList.remove('open');
-    renderSalesList();
-  });
-  body.appendChild(saveBtn);
-  document.getElementById('overlay-edit-sale').classList.add('open');
-}
-
-function updateEsTotal(){
-  var el=document.getElementById('es-total-display');
-  if(!el) return;
-  var total=0;
-  document.querySelectorAll('[id^="es-line-weight-"]').forEach(function(inp){
-    total+=parseFloat(inp.value)||0;
-  });
-  el.innerHTML='<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Total Weight</div>'
-    +'<div style="font-size:24px;font-weight:800;color:var(--gold);">'+total.toLocaleString()+' kg</div>';
-}
-
 </script>
 </head>
 <body>
@@ -4077,7 +3956,127 @@ function applyScanResults(extracted, statusEl){
   }
 }
 
-</script>
-</body>
-</html>
 
+// ════════════ EDIT SALE ════════════
+function openEditSale(sale){
+  // Password check via overlay — prompt() unreliable on mobile
+  var pwOverlay=document.createElement('div');
+  pwOverlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  pwOverlay.innerHTML='<div style="background:var(--surface);border-radius:14px;padding:24px;width:280px;text-align:center;">'
+    +'<div style="font-size:16px;font-weight:700;margin-bottom:16px;">🔒 Enter Password</div>'
+    +'<input type="password" id="edit-sale-pw" class="form-input" style="text-align:center;font-size:20px;letter-spacing:4px;margin-bottom:14px;" placeholder="••••" maxlength="10">'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button id="edit-pw-cancel" class="btn btn-ghost" style="flex:1;">Cancel</button>'
+    +'<button id="edit-pw-ok" class="btn btn-gold" style="flex:1;">OK</button>'
+    +'</div></div>';
+  document.body.appendChild(pwOverlay);
+  var pwInput=pwOverlay.querySelector('#edit-sale-pw');
+  setTimeout(function(){pwInput.focus();},100);
+  pwOverlay.querySelector('#edit-pw-cancel').onclick=function(){document.body.removeChild(pwOverlay);};
+  function doEdit(){
+    var pw=pwInput.value;
+    document.body.removeChild(pwOverlay);
+    if(pw!=='2424'){alert('Incorrect password');return;}
+    _doOpenEditSale(sale);
+  }
+  pwOverlay.querySelector('#edit-pw-ok').onclick=doEdit;
+  pwInput.addEventListener('keydown',function(e){if(e.key==='Enter')doEdit();});
+}
+
+function _doOpenEditSale(sale){
+  var body=document.getElementById('edit-sale-body');
+  if(!body) return;
+  body.innerHTML='';
+  var closeBtn=document.getElementById('close-edit-sale');
+  if(closeBtn) closeBtn.onclick=function(){document.getElementById('overlay-edit-sale').classList.remove('open');};
+
+  // Date
+  var r1=document.createElement('div');r1.className='form-group';
+  r1.innerHTML='<label class="form-label">Date</label><input class="form-input" id="es-date" type="date" value="'+(sale.date||'')+'">';
+  body.appendChild(r1);
+  // Client
+  var r2=document.createElement('div');r2.className='form-group';
+  r2.innerHTML='<label class="form-label">Client</label><input class="form-input" id="es-client" type="text" value="'+(sale.clientName||'')+'">'; 
+  body.appendChild(r2);
+  // Truck
+  var r3=document.createElement('div');r3.className='form-group';
+  r3.innerHTML='<label class="form-label">Truck Reg</label><input class="form-input" id="es-truck" type="text" value="'+(sale.truck||'')+'">'; 
+  body.appendChild(r3);
+  // Lines
+  var linesHdr=document.createElement('div');linesHdr.className='sec-hdr';linesHdr.textContent='Product Lines';
+  body.appendChild(linesHdr);
+  var linesDiv=document.createElement('div');linesDiv.id='es-lines';
+  (sale.lines||[]).forEach(function(line,i){
+    var row=document.createElement('div');
+    row.style.cssText='background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:8px;';
+    // sale lines use 'weight' not 'totalWeight'
+    var lineW=line.weight||line.totalWeight||0;
+    row.innerHTML='<div style="font-size:13px;font-weight:700;color:var(--gold);margin-bottom:8px;">'+(line.productName||'Product '+i)+'</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
+      +'<div><label class="form-label">Bags</label>'
+      +'<input class="form-input" id="es-line-bags-'+i+'" type="number" value="'+(line.bags||line.bagIds&&line.bagIds.length||0)+'"></div>'
+      +'<div><label class="form-label">Weight (kg)</label>'
+      +'<input class="form-input es-line-weight" id="es-line-weight-'+i+'" type="number" step="0.1" value="'+lineW+'"></div>'
+      +'</div>';
+    linesDiv.appendChild(row);
+  });
+  body.appendChild(linesDiv);
+  // Add input listeners after appending
+  body.querySelectorAll('.es-line-weight').forEach(function(inp){
+    inp.addEventListener('input',updateEsTotal);
+  });
+  // Total
+  var totDiv=document.createElement('div');totDiv.id='es-total-display';
+  totDiv.style.cssText='background:var(--surface);border-radius:8px;padding:12px;margin-bottom:14px;text-align:center;';
+  body.appendChild(totDiv);
+  updateEsTotal();
+  // Notes
+  var r4=document.createElement('div');r4.className='form-group';
+  r4.innerHTML='<label class="form-label">Notes</label><textarea class="form-input" id="es-notes" rows="2" style="resize:vertical;">'+(sale.notes||'')+'</textarea>';
+  body.appendChild(r4);
+  // Save
+  var saveBtn=document.createElement('button');
+  saveBtn.className='btn btn-gold';saveBtn.style.cssText='width:100%;margin-top:4px;';
+  saveBtn.textContent='💾 Save Changes';
+  saveBtn.addEventListener('click',function(){
+    var db=getDB();
+    var idx=db.sales.findIndex(function(s){return s.id===sale.id;});
+    if(idx===-1){alert('Sale not found');return;}
+    db.sales[idx].date=document.getElementById('es-date').value||sale.date;
+    db.sales[idx].clientName=document.getElementById('es-client').value||sale.clientName;
+    db.sales[idx].truck=document.getElementById('es-truck').value||sale.truck;
+    db.sales[idx].notes=document.getElementById('es-notes').value;
+    var newTotal=0;
+    (sale.lines||[]).forEach(function(line,i){
+      var wEl=document.getElementById('es-line-weight-'+i);
+      var bEl=document.getElementById('es-line-bags-'+i);
+      if(wEl){ var w=parseFloat(wEl.value)||0; db.sales[idx].lines[i].weight=w; db.sales[idx].lines[i].totalWeight=w; newTotal+=w; }
+      if(bEl) db.sales[idx].lines[i].bags=parseInt(bEl.value)||0;
+    });
+    db.sales[idx].totalWeight=newTotal;
+    saveDB(db);
+    if(getServerUrl()){
+      fetch(getServerUrl()+'/sales',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(db.sales[idx])})
+        .then(function(){showSyncStatus('✅ Sale updated','var(--green)');})
+        .catch(function(){showSyncStatus('⚠ Saved locally','var(--amber)');});
+    }
+    document.getElementById('overlay-edit-sale').classList.remove('open');
+    renderSalesList();
+  });
+  body.appendChild(saveBtn);
+  document.getElementById('overlay-edit-sale').classList.add('open');
+}
+
+function updateEsTotal(){
+  var el=document.getElementById('es-total-display');
+  if(!el) return;
+  var total=0;
+  document.querySelectorAll('[id^="es-line-weight-"]').forEach(function(inp){
+    total+=parseFloat(inp.value)||0;
+  });
+  el.innerHTML='<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Total Weight</div>'
+    +'<div style="font-size:24px;font-weight:800;color:var(--gold);">'+total.toLocaleString()+' kg</div>';
+}
+
+
+</script>

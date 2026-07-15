@@ -169,7 +169,8 @@ tr:last-child td{border-bottom:none;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
 </style>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js">
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script>
 // ════════════ SHIFT REPORT SHARE ════════════
 async function shareShiftReport(shift, db){
   var bags = db.bags.filter(function(b){ return b.shiftId===shift.id; });
@@ -2533,11 +2534,14 @@ function manAddBagRow(){
   var n = _manBagRowCount;
   var chuteMap = getChuteMap();
   var feedId = document.getElementById('man-feed').value;
+  var feedObjForRow = getFeedMaterials().find(function(f){ return f.id === feedId; });
+  var feedNameForRow = feedObjForRow ? feedObjForRow.name : '— no material selected —';
   var chutes = ['1','2','3','4','5','6','BH1','BH2'];
   var ops = getOperators();
 
   var row = document.createElement('div');
   row.id = 'man-row-' + n;
+  row.dataset.feedId = feedId || '';
   row.style.cssText = 'background:var(--surface2);border-radius:var(--radius);padding:14px;margin-bottom:10px;border:1px solid var(--border);position:relative';
 
   // Build chute options
@@ -2554,7 +2558,7 @@ function manAddBagRow(){
 
   row.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
-      '<div style="font-size:13px;font-weight:700;color:var(--gold)">Bag #' + n + '</div>' +
+      '<div style="font-size:13px;font-weight:700;color:var(--gold)">Bag #' + n + ' <span style="font-size:10px;font-weight:600;color:var(--muted);background:var(--surface);padding:2px 6px;border-radius:4px;margin-left:6px;">' + feedNameForRow + '</span></div>' +
       '<button onclick="manRemoveBagRow('+n+')" style="background:none;border:none;color:var(--red);font-size:18px;cursor:pointer;padding:0 4px">×</button>' +
     '</div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">' +
@@ -2607,26 +2611,30 @@ function manUpdateSummary(){
 function submitManualShift(){
   var date = document.getElementById('man-date').value;
   if(!date){ alert('Please select a date'); return; }
-  var feedId = document.getElementById('man-feed').value;
-  if(!feedId){ alert('Please select a feed material'); return; }
 
   var fms = getFeedMaterials();
-  var feedObj = fms.find(function(f){ return f.id === feedId; });
-  var feedName = feedObj ? feedObj.name : '';
   var chuteMap = getChuteMap();
 
-  // Collect bags
+  // Collect bags — each row uses the feed material it was created under,
+  // NOT the current dropdown value, so switching materials mid-entry
+  // can no longer relabel earlier rows.
   var bags = [];
+  var missingFeedRows = [];
   for(var i = 1; i <= _manBagRowCount; i++){
+    var rowEl = document.getElementById('man-row-'+i);
     var chuteEl = document.getElementById('man-chute-'+i);
     var wtEl = document.getElementById('man-wt-'+i);
     var tagEl = document.getElementById('man-tag-'+i);
     var opEl = document.getElementById('man-op-'+i);
-    if(!chuteEl || !wtEl) continue;
+    if(!rowEl || !chuteEl || !wtEl) continue;
     var wt = parseFloat(wtEl.value) || 0;
     if(wt <= 0) continue;
+    var rowFeedId = rowEl.dataset.feedId || '';
+    if(!rowFeedId){ missingFeedRows.push(i); continue; }
+    var feedObj = fms.find(function(f){ return f.id === rowFeedId; });
+    var feedName = feedObj ? feedObj.name : '';
     var chute = chuteEl.value;
-    var key = feedId + '_' + chute;
+    var key = rowFeedId + '_' + chute;
     var productId = chuteMap[key] ? chuteMap[key].productId : '';
     var productName = chuteMap[key] ? chuteMap[key].productName : '';
     bags.push({
@@ -2635,7 +2643,7 @@ function submitManualShift(){
       time: _manShift === 'day' ? '08:00' : '20:00',
       timestamp: new Date(date + 'T' + (_manShift==='day'?'08:00':'20:00') + ':00').toISOString(),
       shift: _manShift,
-      feedId: feedId,
+      feedId: rowFeedId,
       feedName: feedName,
       chute: chute,
       productId: productId,
@@ -2647,6 +2655,11 @@ function submitManualShift(){
       manualEntry: true,
       crew: _manCrew,
     });
+  }
+
+  if(missingFeedRows.length){
+    alert('Bag row(s) '+missingFeedRows.join(', ')+' have no feed material set. Please select a feed material before adding rows, then re-add them.');
+    return;
   }
 
   if(!bags.length){ alert('No bags with valid weights entered'); return; }

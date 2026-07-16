@@ -2614,6 +2614,7 @@ function submitManualShift(){
 
   var fms = getFeedMaterials();
   var chuteMap = getChuteMap();
+  var activeShiftForBags = getActiveShift();
 
   // Collect bags — each row uses the feed material it was created under,
   // NOT the current dropdown value, so switching materials mid-entry
@@ -2654,6 +2655,7 @@ function submitManualShift(){
       qc: 'pass',
       manualEntry: true,
       crew: _manCrew,
+      shiftId: activeShiftForBags ? activeShiftForBags.id : null,
     });
   }
 
@@ -2668,6 +2670,13 @@ function submitManualShift(){
   var db = getDB();
   bags.forEach(function(b){ db.bags.push(b); });
   saveDB(db);
+
+  // Keep the active shift's bag list in sync too, if one is running
+  if(activeShiftForBags){
+    activeShiftForBags.bags = activeShiftForBags.bags || [];
+    bags.forEach(function(b){ activeShiftForBags.bags.push(b.id); });
+    setActiveShift(activeShiftForBags);
+  }
 
   // Sync to server
   if(typeof syncToServer === 'function') syncToServer();
